@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Férias Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            blue: '#0F4C81',
+                            light: '#E6F0FA',
+                            dark: '#0A365C'
+                        },
+                        status: {
+                            green: '#10B981',
+                            yellow: '#F59E0B',
+                            red: '#EF4444',
+                            gray: '#6B7280'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #F8FAFC; }
+        
+        /* Oculta scrollbars para manter visual limpo */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        /* Efeitos visuais */
+        .glass-header { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(5px); border-bottom: 1px solid #e2e8f0; }
+        .tab-active { border-bottom: 3px solid #0F4C81; color: #0F4C81; font-weight: 600; }
+        .tab-inactive { color: #64748b; font-weight: 500; }
+        .tab-inactive:hover { color: #334155; border-bottom: 3px solid #cbd5e1; }
+        
+        /* Grid do Mapa (Estilo Planilha) */
+        .spreadsheet-grid { display: grid; grid-template-columns: 250px 140px repeat(12, minmax(60px, 1fr)); border: 1px solid #e2e8f0; background: white; }
+        .sheet-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 0.5rem; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
+        .sheet-cell.text-left { justify-content: flex-start; }
+        .sheet-header { background-color: #f8fafc; font-weight: 600; color: #334155; text-transform: uppercase; font-size: 0.7rem; }
+        
+        /* Proteção de Células (Read-only inputs) */
+        input[readonly] { background-color: #f8fafc; cursor: not-allowed; color: #64748b; border-color: #e2e8f0; }
+
+        /* Configurações de Impressão (A4 / A3) */
+        @media print {
+            @page { size: A4 landscape; margin: 10mm; }
+            body { background-color: white; }
+            .print-hidden { display: none !important; }
+            .print-block { display: block !important; }
+            .shadow-sm, .shadow { box-shadow: none !important; }
+            .spreadsheet-grid { border: 1px solid #000; }
+            .sheet-cell { border-right: 1px solid #000; border-bottom: 1px solid #000; color: #000 !important; }
+            .bg-status-green { background-color: #10B981 !important; -webkit-print-color-adjust: exact; color: white !important;}
+            .bg-status-yellow { background-color: #F59E0B !important; -webkit-print-color-adjust: exact; }
+            .bg-status-red { background-color: #EF4444 !important; -webkit-print-color-adjust: exact; color: white !important;}
+        }
+    </style>
+</head>
+<body class="text-gray-800 flex flex-col h-screen overflow-hidden">
+
+    <header class="glass-header sticky top-0 z-40 print-hidden shrink-0">
+        <div class="w-full px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logotipo -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-brand-blue rounded flex items-center justify-center text-white font-bold text-xl shadow-inner">
+                        <i class="fa-solid fa-umbrella-beach"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-xl text-gray-900 leading-tight">Mapa de Férias Pro</h1>
+                        <p class="text-xs text-gray-500 font-medium">Planejamento Corporativo</p>
+                    </div>
+                </div>
+
+                <!-- Ações Globais -->
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <select class="appearance-none bg-gray-100 border-none text-sm font-medium py-2 pl-4 pr-8 rounded focus:ring-2 focus:ring-brand-blue outline-none cursor-pointer">
+                            <option>Ano Referência: 2026</option>
+                            <option>Ano Referência: 2027</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-gray-400 text-xs pointer-events-none"></i>
+                    </div>
+                    
+                    <label for="import-file" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded text-sm font-medium transition cursor-pointer flex items-center gap-2 shadow-sm print-hidden">
+                        <i class="fa-solid fa-upload"></i> <span class="hidden sm:inline">Importar</span>
+                    </label>
+                    <input type="file" id="import-file" class="hidden" accept=".json" onchange="app.importarJSON(event)">
+
+                    <button onclick="app.exportarJSON()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded text-sm font-medium transition flex items-center gap-2 shadow-sm print-hidden">
+                        <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Backup</span>
+                    </button>
+
+                    <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-print"></i> <span class="hidden sm:inline">Imprimir Relatório</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Tabs Navigation -->
+            <nav class="flex space-x-8 mt-2 overflow-x-auto">
+                <button onclick="app.switchTab('dashboard')" id="tab-dashboard" class="tab-active pb-3 px-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-chart-pie mr-2"></i>Dashboard
+                </button>
+                <button onclick="app.switchTab('cadastro')" id="tab-cadastro" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-users mr-2"></i>Cadastro de Funcionários
+                </button>
+                <button onclick="app.switchTab('controle')" id="tab-controle" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-clipboard-list mr-2"></i>Controle de Períodos
+                </button>
+                <button onclick="app.switchTab('mapa')" id="tab-mapa" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-calendar-days mr-2"></i>Mapa Anual de Férias
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Cabeçalho visível apenas na impressão -->
+    <div class="hidden print-block text-center py-4 mb-4 border-b-2 border-gray-800">
+        <h1 class="text-2xl font-bold uppercase">Relatório Oficial - Mapa de Férias</h1>
+        <p class="text-gray-600" id="print-date"></p>
+    </div>
+
+    <main class="flex-1 overflow-y-auto bg-gray-50 print:bg-white p-4 sm:p-6 lg:px-8 w-full">
+        
+        <!-- 1. DASHBOARD -->
+        <div id="view-dashboard" class="space-y-6 block">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Total Ativos</p>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-3xl font-bold text-gray-800" id="kpi-total">0</h3>
+                        <i class="fa-solid fa-users text-gray-300 text-2xl"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-b-4 border-b-status-green">
+                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Em Férias (Mês Atual)</p>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-3xl font-bold text-status-green" id="kpi-ferias">0</h3>
+                        <i class="fa-solid fa-plane text-status-green opacity-50 text-2xl"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-b-4 border-b-status-red">
+                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Férias Vencidas</p>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-3xl font-bold text-status-red" id="kpi-vencidas">0</h3>
+                        <i class="fa-solid fa-triangle-exclamation text-status-red opacity-50 text-2xl"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-b-4 border-b-status-yellow">
+                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Programadas (Próx. 30 dias)</p>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-3xl font-bold text-status-yellow" id="kpi-programadas">0</h3>
+                        <i class="fa-regular fa-calendar-check text-status-yellow opacity-50 text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 print-hidden">
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 lg:col-span-2">
+                    <h4 class="text-sm font-bold text-gray-700 mb-4 border-b pb-2">Distribuição de Férias por Mês</h4>
+                    <div class="h-64 relative">
+                        <canvas id="chartMonths"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                    <h4 class="text-sm font-bold text-gray-700 mb-4 border-b pb-2">Funcionários por Turno/Setor</h4>
+                    <div class="h-64 relative">
+                        <canvas id="chartSectors"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. CADASTRO DE FUNCIONÁRIOS -->
+        <div id="view-cadastro" class="hidden h-full flex flex-col">
+            <div class="bg-white p-4 rounded-t-lg border border-gray-200 border-b-0 flex flex-wrap gap-3 items-center justify-between print-hidden">
+                <div class="flex gap-3 flex-wrap flex-1">
+                    <input type="text" id="cad-search" placeholder="Buscar nome ou matrícula..." class="border rounded px-3 py-1.5 text-sm w-full max-w-xs focus:ring-1 focus:ring-brand-blue outline-none" oninput="app.renderCadastro()">
+                    <select id="cad-filter-setor" class="border rounded px-3 py-1.5 text-sm bg-white" onchange="app.renderCadastro()">
+                        <option value="">Todos os Setores</option>
+                        <option value="Engenh">Engenharia (Engenh)</option>
+                        <option value="A">Turno A</option>
+                        <option value="B">Turno B</option>
+                        <option value="C">Turno C</option>
+                        <option value="OBRA">Obra</option>
+                        <option value="APOIO">Apoio</option>
+                        <option value="OFICINA">Oficina</option>
+                        <option value="LIMP INT">Limpeza Interna</option>
+                    </select>
+                    <select id="cad-filter-status" class="border rounded px-3 py-1.5 text-sm bg-white" onchange="app.renderCadastro()">
+                        <option value="">Todos os Status</option>
+                        <option value="Ativo">Ativo</option>
+                        <option value="Afastado">Afastado</option>
+                        <option value="Desligado">Desligado</option>
+                    </select>
+                </div>
+                <button onclick="app.openModal('modal-func')" class="bg-brand-blue hover:bg-brand-dark text-white px-4 py-1.5 rounded text-sm font-medium transition shadow-sm">
+                    <i class="fa-solid fa-plus mr-1"></i> Novo Cadastro
+                </button>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-b-lg overflow-x-auto flex-1">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-3">Matrícula</th>
+                            <th class="px-4 py-3">Nome do Funcionário</th>
+                            <th class="px-4 py-3">Cargo / Função</th>
+                            <th class="px-4 py-3">Turno / Setor</th>
+                            <th class="px-4 py-3">Data de Admissão</th>
+                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3 text-right print-hidden">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-cadastro" class="divide-y divide-gray-100 text-gray-600">
+                        <!-- Gerado via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. CONTROLE DE PERÍODOS -->
+        <div id="view-controle" class="hidden space-y-6">
+            <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 print-hidden">
+                <h3 class="text-sm font-bold text-gray-800 mb-4 border-b pb-2 flex justify-between items-center">
+                    <span>Lançamento de Períodos de Férias</span>
+                    <span class="text-xs text-brand-blue font-normal"><i class="fa-solid fa-lock text-gray-400"></i> Fórmulas Automáticas</span>
+                </h3>
+                
+                <form id="form-controle" onsubmit="app.salvarFerias(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Selecione o Funcionário</label>
+                        <select id="ctrl-func" class="w-full border rounded px-3 py-2 text-sm focus:ring-brand-blue" required onchange="app.calcControleFields()">
+                            <!-- Opções JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Data de Admissão</label>
+                        <input type="text" id="ctrl-admissao" class="w-full border rounded px-3 py-2 text-sm" readonly>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Período Aquisitivo Base</label>
+                        <input type="text" id="ctrl-aquisitivo" class="w-full border rounded px-3 py-2 text-sm font-medium" readonly>
+                    </div>
+
+                    <div class="bg-gray-50 p-3 rounded border border-gray-200 md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Limite Concessivo</label>
+                            <input type="text" id="ctrl-limite" class="w-full bg-transparent border-none p-0 text-sm font-bold text-gray-800" readonly>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Dias de Direito</label>
+                            <input type="text" id="ctrl-direito" value="30" class="w-full bg-transparent border-none p-0 text-sm font-bold text-gray-800" readonly>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Dias Gozados / Agendados</label>
+                            <input type="text" id="ctrl-gozados" class="w-full bg-transparent border-none p-0 text-sm font-bold text-gray-800" readonly>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Saldo Restante</label>
+                            <input type="text" id="ctrl-saldo" class="w-full bg-transparent border-none p-0 text-sm font-bold text-brand-blue" readonly>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Data Início</label>
+                        <input type="date" id="ctrl-inicio" class="w-full border rounded px-3 py-2 text-sm" required onchange="app.calcDataFim()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Quantidade de Dias</label>
+                        <input type="number" id="ctrl-dias" class="w-full border rounded px-3 py-2 text-sm" min="5" max="30" required onchange="app.calcDataFim()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Data Fim (Calculada)</label>
+                        <input type="date" id="ctrl-fim" class="w-full border rounded px-3 py-2 text-sm" readonly>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <button type="submit" id="btn-submit-ferias" class="w-full bg-brand-blue hover:bg-brand-dark text-white px-4 py-2 rounded text-sm font-medium transition shadow-sm">
+                            Registrar Período
+                        </button>
+                        <button type="button" id="btn-cancel-edit" onclick="app.cancelarEdicaoFerias()" class="hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm font-medium transition shadow-sm">
+                            Cancelar Edição
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 class="text-sm font-bold text-gray-800 whitespace-nowrap">Histórico de Períodos e Situação (Controle)</h3>
+                    
+                    <!-- Novos Filtros do Histórico -->
+                    <div class="flex gap-2 w-full md:w-auto">
+                        <div class="relative flex-1 md:w-64">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                            <input type="text" id="ctrl-filter-nome" oninput="app.renderControle()" placeholder="Buscar funcionário..." class="w-full border rounded pl-8 pr-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-brand-blue">
+                        </div>
+                        <select id="ctrl-filter-status" onchange="app.renderControle()" class="border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-brand-blue bg-white">
+                            <option value="">Status: Todos</option>
+                            <option value="Gozando">Gozando</option>
+                            <option value="Programada">Programada</option>
+                            <option value="Concluída">Concluída</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-100 border-b border-gray-200">
+                            <tr>
+                                <th class="px-4 py-3">Funcionário</th>
+                                <th class="px-4 py-3">Período Aquisitivo</th>
+                                <th class="px-4 py-3">Limite Concessão</th>
+                                <th class="px-4 py-3 text-center">Início - Fim</th>
+                                <th class="px-4 py-3 text-center">Dias</th>
+                                <th class="px-4 py-3 text-center">Status</th>
+                                <th class="px-4 py-3 text-right print-hidden">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-controle" class="divide-y divide-gray-100 text-gray-600">
+                            <!-- Gerado via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. MAPA DE FÉRIAS ANUAL (A visão tipo Planilha) -->
+        <div id="view-mapa" class="hidden h-full flex flex-col">
+            <div class="bg-white p-3 rounded-t-lg border border-gray-200 border-b-0 flex flex-wrap gap-4 items-center print-hidden">
+                <select id="map-filter-setor" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
+                    <option value="">Filtrar: Todos os Setores</option>
+                    <option value="Engenh">Engenharia</option>
+                    <option value="A">Turno A</option>
+                    <option value="B">Turno B</option>
+                    <option value="C">Turno C</option>
+                    <option value="OBRA">Obra</option>
+                    <option value="APOIO">Apoio</option>
+                    <option value="OFICINA">Oficina</option>
+                    <option value="LIMP INT">Limpeza Interna</option>
+                </select>
+
+                <!-- Novo Filtro de Nome no Mapa -->
+                <div class="relative w-full max-w-xs">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                    <input type="text" id="map-filter-nome" placeholder="Buscar por nome..." class="w-full border rounded pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-1 focus:ring-brand-blue" oninput="app.renderMapa()">
+                </div>
+                
+                <div class="flex gap-4 text-xs font-medium ml-auto">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-green rounded"></span> Gozadas/Gozando</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-yellow rounded"></span> Programadas</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-red rounded"></span> Alerta Vencidas</span>
+                </div>
+            </div>
+            
+            <div class="bg-white overflow-x-auto flex-1 rounded-b-lg border border-t-0 border-gray-200 print:overflow-visible print:border-none">
+                <div class="spreadsheet-grid min-w-[900px] print:w-full" id="map-grid">
+                    <!-- O grid será gerado pelo JS simulando colunas do Excel -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modais e Toasts -->
+    <div id="modal-func" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center print-hidden">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Cadastrar Funcionário</h2>
+            <form id="form-func" onsubmit="app.salvarFuncionario(event)" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Matrícula</label>
+                        <input type="text" id="mf-mat" class="w-full border rounded px-3 py-1.5 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Data Admissão</label>
+                        <input type="date" id="mf-adm" class="w-full border rounded px-3 py-1.5 text-sm" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Nome Completo</label>
+                    <input type="text" id="mf-nome" class="w-full border rounded px-3 py-1.5 text-sm" required>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Cargo / Função</label>
+                        <input type="text" id="mf-cargo" class="w-full border rounded px-3 py-1.5 text-sm" placeholder="Ex: Operador" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Turno / Setor</label>
+                        <select id="mf-setor" class="w-full border rounded px-3 py-1.5 text-sm" required>
+                            <option value="Engenh">Engenh</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="OBRA">OBRA</option>
+                            <option value="APOIO">APOIO</option>
+                            <option value="OFICINA">OFICINA</option>
+                            <option value="LIMP INT">LIMP INT</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="app.closeModal('modal-func')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded text-sm font-medium">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-brand-blue text-white rounded text-sm font-medium">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NOVO: Modal de Histórico do Funcionário -->
+    <div id="modal-details" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center print-hidden backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] mx-4 transform transition-all">
+            <div class="bg-brand-blue p-4 flex justify-between items-center text-white">
+                <h2 class="text-lg font-bold flex items-center gap-2"><i class="fa-solid fa-address-card"></i> Ficha de Férias do Funcionário</h2>
+                <button onclick="app.closeModal('modal-details')" class="text-white hover:text-gray-200 transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto bg-gray-50">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-white p-4 rounded shadow-sm border border-gray-200" id="md-func-info">
+                    <!-- Gerado via JS -->
+                </div>
+                <h3 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-brand-blue"></i> Histórico de Períodos</h3>
+                <div class="overflow-x-auto border border-gray-200 rounded bg-white shadow-sm">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-100 border-b border-gray-200">
+                            <tr>
+                                <th class="px-4 py-3">Início</th>
+                                <th class="px-4 py-3">Fim</th>
+                                <th class="px-4 py-3 text-center">Qtd. Dias</th>
+                                <th class="px-4 py-3 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="md-tbody-ferias" class="divide-y divide-gray-100 text-gray-600">
+                            <!-- Gerado via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="bg-white p-4 border-t border-gray-200 flex justify-end">
+                <button onclick="app.closeModal('modal-details')" class="px-5 py-2 bg-gray-100 text-gray-800 rounded shadow-sm text-sm font-bold hover:bg-gray-200 transition">Fechar Aba</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-3 rounded shadow-lg transform transition-transform translate-y-20 opacity-0 z-50 flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-status-green"></i>
+        <span id="toast-msg" class="text-sm font-medium">Operação realizada com sucesso!</span>
+    </div>
+
+    <script>
+        // Data Atual Simulada (Julho de 2026 conforme contexto)
+        const HOJE = new Date('2026-07-13T12:00:00');
+        const ANO_VIGENTE = 2026;
+
+        document.getElementById('print-date').innerText = `Emitido em: ${HOJE.toLocaleDateString('pt-BR')} - Ano Referência: ${ANO_VIGENTE}`;
+
+        // Banco de Dados Padrão (Extraído automaticamente da planilha do usuário)
+        const dbPadrao = {
+            funcionarios: [
+                { id: 1, mat: 'MAT-3363', nome: 'ANTONIO MARCOS MARCELINO DA SILVA', cargo: 'Eng. Civil Sr.', setor: 'Engenh', admissao: '2024-09-24', status: 'Ativo' },
+                { id: 2, mat: '52', nome: 'DANILO DA SILVA RIBEIRO', cargo: 'ENCARREGADO ATERRO SANITÁRIO', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 3, mat: '150', nome: 'FERNANDO DA SILVA GONCALVES', cargo: 'Nivelador', setor: 'A', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 4, mat: '156', nome: 'LEONARDO DE SOUZA ARAGAO', cargo: 'Ajudante Operacional 0', setor: 'A', admissao: '2024-11-21', status: 'Ativo' },
+                { id: 5, mat: '165', nome: 'MATHEUS SANTOS NASCIMENTO DA SILVA', cargo: 'Ajudante Operacional 0', setor: 'A', admissao: '2025-10-24', status: 'Ativo' },
+                { id: 6, mat: '167', nome: 'LUAN OLIVEIRA COSMO', cargo: 'Ajudante Operacional 0', setor: 'A', admissao: '2025-12-02', status: 'Ativo' },
+                { id: 7, mat: '13', nome: 'JOSE WESCLEY SILVA CAVALCANTE', cargo: 'ENCARREGADO ATERRO SANITÁRIO', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 8, mat: '43', nome: 'ALBERTO FRANCISCO DA COSTA', cargo: 'Motorista', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 9, mat: '41', nome: 'MATHEUS COSMO DE OLIVEIRA', cargo: 'Motorista', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 10, mat: '42', nome: 'RAFAEL DA SILVA SANTOS', cargo: 'Motorista', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 11, mat: '82', nome: 'WILLIAM TAVARES DA SILVA', cargo: 'Motorista', setor: 'A', admissao: '2023-08-28', status: 'Ativo' },
+                { id: 12, mat: '154', nome: 'CRISTIAN ALEXANDRE CAMPOS', cargo: 'Motorista', setor: 'B', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 13, mat: '7', nome: 'GENISON PEREIRA SOARES', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 14, mat: '66', nome: 'ANGELO MARCOS DOS SANTOS MUNIZ', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 15, mat: '39', nome: 'ANTONIO JESUS SOUSA LIMA', cargo: 'Oper. Máquina', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 16, mat: '25', nome: 'DAMIAO PLACIDO DA NOBREGA', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 17, mat: '35', nome: 'FRANCISCO CLAUDIO BARBOSA DA SILVA', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 18, mat: '12', nome: 'JOSE SILVESTRE ALVES LOPES', cargo: 'Oper. Máquina', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 19, mat: '37', nome: 'MARCIEL DA SILVA SOBRINHO', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 20, mat: '160', nome: 'CLEUBER JUNIO DA SILVA PINHEIRO', cargo: 'Ajudante Operacional 0', setor: 'B', admissao: '2025-05-23', status: 'Ativo' },
+                { id: 21, mat: '129', nome: 'CLEITON ALEXANDRE CELIRA DIOLINO', cargo: 'Fiscal de Campo', setor: 'A', admissao: '2024-07-08', status: 'Ativo' },
+                { id: 22, mat: '151', nome: 'JOAO CLEYTON MOREIRA DA SILVA', cargo: 'Ajudante Operacional 0', setor: 'B', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 23, mat: '169', nome: 'RAY SILVA MARCOLINO SOUSA', cargo: 'Ajudante Operacional 0', setor: 'B', admissao: '2025-12-23', status: 'Ativo' },
+                { id: 24, mat: '117', nome: 'WESLEY ALVES ASSUNCAO', cargo: 'Nivelador', setor: 'B', admissao: '2023-10-25', status: 'Ativo' },
+                { id: 25, mat: '45', nome: 'FRANCISCO LEONARDO DE OLIVEIRA LIMA', cargo: 'Motorista', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 26, mat: '19', nome: 'NEUTON NASCIMENTO DE SOUZA', cargo: 'Motorista', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 27, mat: '104', nome: 'FABIO ALVES FEITOSA', cargo: 'Motorista', setor: 'B', admissao: '2023-10-09', status: 'Ativo' },
+                { id: 28, mat: '55', nome: 'DOUGLAS JEFFERSONY SILVA TELES', cargo: 'Oper. Máquina', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 29, mat: '1', nome: 'ALEX FELIPE DO NASCIMENTO DUARTE', cargo: 'Oper. Máquina', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 30, mat: '31', nome: 'CICERO SOUSA DA CONCEICAO', cargo: 'Oper. Máquina', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 31, mat: '28', nome: 'JOSE WELLITON COSTA DA SILVA', cargo: 'Oper. Máquina', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 32, mat: '33', nome: 'CLEUBER MACEDO PINHEIRO', cargo: 'ENCARREGADO ATERRO SANITÁRIO', setor: 'C', admissao: '2022-10-19', status: 'Ativo' },
+                { id: 33, mat: '64', nome: 'DACI DOS SANTOS SOUZA', cargo: 'Fiscal de Campo', setor: 'B', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 34, mat: '144', nome: 'ANTONIO ERISVANDO DAS DORES DA SILVA', cargo: 'Ajudante Operacional 0', setor: 'C', admissao: '2024-09-24', status: 'Ativo' },
+                { id: 35, mat: '139', nome: 'LUCAS CAETANO FELIX', cargo: 'Ajudante Operacional 0', setor: 'APOIO', admissao: '2024-09-04', status: 'Ativo' },
+                { id: 36, mat: '18', nome: 'NEIRIVAN DO NASCIMENTO', cargo: 'Ajudante Operacional 0', setor: 'C', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 37, mat: '38', nome: 'ANILTO MOREIRA DUARTE', cargo: 'Motorista', setor: 'C', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 38, mat: '20', nome: 'OLAVO FERREIRA DE SOUSA', cargo: 'Oper. Máquina', setor: 'C', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 39, mat: '27', nome: 'FLAVIO GOMES DA SILVA', cargo: 'Oper. Máquina', setor: 'C', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 40, mat: '62', nome: 'EMIVALDO ALVES RIBEIRO', cargo: 'Encarregado de Obra', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 41, mat: '2', nome: 'ALEXANDRE DO NASCIMENTO PEREIRA', cargo: 'Fiscal de Campo', setor: 'C', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 42, mat: '3', nome: 'DENIVALDO ALVES DE OLIVEIRA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 43, mat: '10', nome: 'JOCEONE TELES DOS SANTOS', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 44, mat: '86', nome: 'MARCIO ROBERTO DOS SANTOS', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2023-08-28', status: 'Ativo' },
+                { id: 45, mat: '21', nome: 'PAULO CANDIDO DE SOUSA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 46, mat: '90', nome: 'ROGERIO SANTOS SALES', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2023-09-04', status: 'Ativo' },
+                { id: 47, mat: '138', nome: 'SEBASTIAO MESSIAS DE SOUSA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 48, mat: '145', nome: 'DAMIAO HELIO FELIX DOMINGOS', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2024-09-24', status: 'Ativo' },
+                { id: 49, mat: '149', nome: 'ANTONIO ALCEMIR ALVES DE CASTRO', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 50, mat: '109', nome: 'DAVI JUNIO FERREIRA DE SOUSA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2023-10-10', status: 'Ativo' },
+                { id: 51, mat: '147', nome: 'WANDERSON DA SILVA CHAGAS', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 52, mat: '163', nome: 'SAMUEL DA SILVA FERREIRA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2025-08-07', status: 'Ativo' },
+                { id: 53, mat: '173', nome: 'JANDIEL DOS SANTOS SILVA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2026-02-03', status: 'Ativo' },
+                { id: 54, mat: '15', nome: 'MANOEL APOLINARIO MOURA DA SILVA', cargo: 'Motorista', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 55, mat: '9', nome: 'JHADYSON JUNIO DO NASCIMENTO SILVA', cargo: 'Oper. Máquina', setor: 'A', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 56, mat: '36', nome: 'LUIS ALVES DA SILVA FILHO', cargo: 'Oper. Máquina', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 57, mat: '57', nome: 'ALEXANDRE SOUZA SIQUEIRA', cargo: 'Pedreiro', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 58, mat: '58', nome: 'JAKSON JUNIOR LOPES DA SILVA', cargo: 'Pedreiro', setor: 'OBRA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 59, mat: '71', nome: 'ROGERIO LEAL DE SENA', cargo: 'Aux. Manutenção', setor: 'OFICINA', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 60, mat: '73', nome: 'JOAO BATISTA DE OLIVEIRA FILHO', cargo: 'Lavador', setor: 'OFICINA', admissao: '2022-10-28', status: 'Ativo' },
+                { id: 61, mat: '168', nome: 'KAIANNO CARNEIRO LIMA', cargo: 'Motorista', setor: 'OFICINA', admissao: '2025-12-02', status: 'Ativo' },
+                { id: 62, mat: '59', nome: 'FABRICIO ALVES DE ANDRADE', cargo: 'Apontador', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 63, mat: '161', nome: 'JHONAS DA SILVA CARDOZO', cargo: 'Almoxarife', setor: 'APOIO', admissao: '2025-07-11', status: 'Ativo' },
+                { id: 64, mat: '68', nome: 'ANTONIO ELIELTON SOUSA BEZERRA', cargo: 'Aux. Técnico', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 65, mat: '130', nome: 'SAMUEL ALVES DA COSTA', cargo: 'Aux. Topografia', setor: 'APOIO', admissao: '2024-07-08', status: 'Ativo' },
+                { id: 66, mat: '140', nome: 'RYAN PABLO CAMPOS BRITO', cargo: 'Aux. Administrativo(aprendiz)', setor: 'APOIO', admissao: '2024-10-17', status: 'Ativo' },
+                { id: 67, mat: '158', nome: 'RAQUEL ALVES DE PAULO', cargo: 'Aux. Administrativo(aprendiz)', setor: 'APOIO', admissao: '2025-06-03', status: 'Ativo' },
+                { id: 68, mat: '171', nome: 'MARIANA PEREIRA DIAS', cargo: 'Aux. Administrativo(aprendiz)', setor: 'APOIO', admissao: '2026-01-26', status: 'Ativo' },
+                { id: 69, mat: '172', nome: 'ALANNE STEPHANIE MOREIRA DE ARAUJO', cargo: 'Aux. Administrativo(aprendiz)', setor: 'APOIO', admissao: '2026-01-26', status: 'Ativo' },
+                { id: 70, mat: '44', nome: 'CARLOS EDUARDO SANTOS DOS REIS', cargo: 'Balanceiro', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 71, mat: '61', nome: 'DOUGLAS OLIVEIRA DA COSTA', cargo: 'Topografo', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 72, mat: '24', nome: 'WAGNER DE ASSIS SILVA', cargo: 'Vigia', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 73, mat: '46', nome: 'RONALDO RIBEIRO PAIVA', cargo: 'Vigia', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 74, mat: '70', nome: 'EDIMILTON PEREIRA DE SOUZA', cargo: 'Vigia', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 75, mat: '54', nome: 'FRANCISCO FREITAS DA SILVA', cargo: 'Vigia', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 76, mat: '56', nome: 'LUCAS ARAUJO DA SILVA', cargo: 'Nivelador', setor: 'APOIO', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 77, mat: '153', nome: 'ALAN ALVES SIQUEIRA', cargo: 'Ajudante Operacional 0', setor: 'OBRA', admissao: '2024-11-04', status: 'Ativo' },
+                { id: 78, mat: '48', nome: 'CLEANE PEREIRA DE SOUSA', cargo: 'Aux. Servicos Gerais', setor: 'LIMP INT', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 79, mat: '17', nome: 'MARCONI COSME DA NOBREGA', cargo: 'Aux. Servicos Gerais', setor: 'LIMP INT', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 80, mat: '49', nome: 'MARISA GONCALVES DIAS', cargo: 'Aux. Servicos Gerais', setor: 'LIMP INT', admissao: '2022-10-18', status: 'Ativo' },
+                { id: 81, mat: '175', nome: 'DANIEL LUCAS CORREIA DA SILVA', cargo: 'Ajudante Operacional 0', setor: 'C', admissao: '2026-03-17', status: 'Ativo' },
+                { id: 82, mat: '174', nome: 'LUCAS DE OLIVEIRA SOUSA', cargo: 'ASSISTENTE DE ENGENHARIA', setor: 'APOIO', admissao: '2026-03-04', status: 'Ativo' },
+                { id: 83, mat: '178', nome: 'ANDERSON ALVES DE SOUZA', cargo: 'ENGENHEIRO CIVIL PL', setor: 'Engenh', admissao: '2026-04-14', status: 'Ativo' },
+                { id: 84, mat: '177', nome: 'DARLEI RAMOS DOS SANTOS', cargo: 'Pedreiro', setor: 'OBRA', admissao: '2026-04-09', status: 'Ativo' },
+                { id: 85, mat: '179', nome: 'COSMO PEREIRA BARBOSA', cargo: 'Motorista Caminhão Comboio', setor: 'OFICINA', admissao: '2026-04-24', status: 'Ativo' },
+                { id: 86, mat: '180', nome: 'LEANDRO PEREIRA DA SILVA', cargo: 'Aux. Topografia', setor: 'APOIO', admissao: '2026-04-24', status: 'Ativo' },
+                { id: 87, mat: '181', nome: 'EDNALDO VIEIRA DE SOUZA', cargo: 'Ajudante Operacional 0', setor: 'B', admissao: '2026-05-25', status: 'Ativo' },
+                { id: 88, mat: '182', nome: 'MARCO ANTONIO LEDEZMA SARRAMEDA', cargo: 'Ajudante Operacional 0', setor: 'C', admissao: '2026-05-25', status: 'Ativo' },
+                { id: 89, mat: '183', nome: 'LEONARDO DA SILVA GONCALVES TEIXEIRA', cargo: 'Oper. Máquina', setor: 'A', admissao: '2026-06-24', status: 'Ativo' }
+            ],
+            ferias: []
+        };
+
+        // Usa uma chave nova (mapaFeriasDB_lista_completa) para forçar o carregamento 
+        // dos novos dados extraídos da planilha sem misturar com testes anteriores.
+        let DB = JSON.parse(localStorage.getItem('mapaFeriasDB_lista_completa'));
+        if (!DB) {
+            DB = dbPadrao;
+            localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
+        }
+
+        const app = {
+            chartMonthsInstance: null,
+            chartSectorsInstance: null,
+            editingFeriasId: null,
+
+            salvarDB() {
+                localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
+            },
+
+            switchTab(tabId) {
+                ['dashboard', 'cadastro', 'controle', 'mapa'].forEach(id => {
+                    document.getElementById(`view-${id}`).classList.add('hidden');
+                    document.getElementById(`tab-${id}`).className = 'tab-inactive pb-3 px-1 transition whitespace-nowrap';
+                });
+                document.getElementById(`view-${tabId}`).classList.remove('hidden');
+                document.getElementById(`tab-${tabId}`).className = 'tab-active pb-3 px-1 transition whitespace-nowrap';
+
+                if (tabId === 'dashboard') this.renderDashboard();
+                if (tabId === 'cadastro') this.renderCadastro();
+                if (tabId === 'controle') this.renderControle();
+                if (tabId === 'mapa') this.renderMapa();
+            },
+
+            calcPeriodos(dataAdmissaoStr) {
+                const adm = new Date(dataAdmissaoStr + 'T12:00:00');
+                let anosDeEmpresa = Math.floor((HOJE - adm) / (1000 * 60 * 60 * 24 * 365.25));
+                if (anosDeEmpresa < 0) anosDeEmpresa = 0; 
+                
+                let aqInicio = new Date(adm);
+                aqInicio.setFullYear(adm.getFullYear() + Math.max(0, anosDeEmpresa - 1));
+                
+                let aqFim = new Date(aqInicio);
+                aqFim.setFullYear(aqInicio.getFullYear() + 1);
+                aqFim.setDate(aqFim.getDate() - 1);
+
+                let concFim = new Date(aqFim);
+                concFim.setFullYear(concFim.getFullYear() + 1);
+
+                let vencida = HOJE > concFim;
+                return { aqInicio, aqFim, concFim, vencida };
+            },
+
+            getStatusFerias(inicio, fim) {
+                const dtIni = new Date(inicio + 'T12:00:00');
+                const dtFim = new Date(fim + 'T12:00:00');
+                if (HOJE < dtIni) return 'Programada';
+                if (HOJE >= dtIni && HOJE <= dtFim) return 'Gozando';
+                return 'Concluída';
+            },
+
+            showToast(msg) {
+                const toast = document.getElementById('toast');
+                document.getElementById('toast-msg').innerText = msg;
+                toast.classList.remove('translate-y-20', 'opacity-0');
+                setTimeout(() => {
+                    toast.classList.add('translate-y-20', 'opacity-0');
+                }, 3000);
+            },
+
+            openModal(id) { document.getElementById(id).classList.remove('hidden'); },
+            closeModal(id) { document.getElementById(id).classList.add('hidden'); },
+
+            renderDashboard() {
+                const ativos = DB.funcionarios.filter(f => f.status === 'Ativo');
+                document.getElementById('kpi-total').innerText = ativos.length;
+
+                let emFerias = 0, programadas = 0;
+                let thirtyDaysFromNow = new Date(HOJE);
+                thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+                DB.ferias.forEach(f => {
+                    const dtIni = new Date(f.inicio + 'T12:00:00');
+                    const dtFim = new Date(f.fim + 'T12:00:00');
+                    if (HOJE >= dtIni && HOJE <= dtFim) emFerias++;
+                    if (dtIni > HOJE && dtIni <= thirtyDaysFromNow) programadas++;
+                });
+
+                document.getElementById('kpi-ferias').innerText = emFerias;
+                document.getElementById('kpi-programadas').innerText = programadas;
+
+                let vencidasCount = 0;
+                ativos.forEach(func => {
+                    const p = this.calcPeriodos(func.admissao);
+                    const gozados = DB.ferias.filter(f => f.funcId === func.id).reduce((acc, f) => acc + f.dias, 0);
+                    if (p.vencida && gozados < 30) vencidasCount++; 
+                });
+                document.getElementById('kpi-vencidas').innerText = vencidasCount;
+
+                const mesesCount = new Array(12).fill(0);
+                DB.ferias.forEach(f => {
+                    if(f.inicio.startsWith(ANO_VIGENTE.toString())) {
+                        const mes = parseInt(f.inicio.split('-')[1]) - 1;
+                        mesesCount[mes]++;
+                    }
+                });
+
+                const ctxM = document.getElementById('chartMonths').getContext('2d');
+                if (this.chartMonthsInstance) this.chartMonthsInstance.destroy();
+                this.chartMonthsInstance = new Chart(ctxM, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+                        datasets: [{
+                            label: 'Funcionários em Férias',
+                            data: mesesCount,
+                            backgroundColor: '#0F4C81',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+
+                const setoresCount = {};
+                ativos.forEach(f => { setoresCount[f.setor] = (setoresCount[f.setor] || 0) + 1; });
+                
+                const ctxS = document.getElementById('chartSectors').getContext('2d');
+                if (this.chartSectorsInstance) this.chartSectorsInstance.destroy();
+                this.chartSectorsInstance = new Chart(ctxS, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(setoresCount),
+                        datasets: [{
+                            data: Object.values(setoresCount),
+                            backgroundColor: ['#0F4C81', '#10B981', '#F59E0B', '#6B7280', '#8B5CF6', '#EC4899', '#3B82F6', '#14B8A6']
+                        }]
+                    },
+                    options: { maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right', labels: { boxWidth: 12 } } } }
+                });
+            },
+
+            renderCadastro() {
+                const search = document.getElementById('cad-search').value.toLowerCase();
+                const setor = document.getElementById('cad-filter-setor').value;
+                const status = document.getElementById('cad-filter-status').value;
+                const tbody = document.getElementById('tbody-cadastro');
+                tbody.innerHTML = '';
+
+                DB.funcionarios.forEach(func => {
+                    if (search && !func.nome.toLowerCase().includes(search) && !func.mat.toLowerCase().includes(search)) return;
+                    if (setor && func.setor !== setor) return;
+                    if (status && func.status !== status) return;
+
+                    let statusBadge = func.status === 'Ativo' ? 'bg-status-green/10 text-status-green' : 'bg-gray-100 text-gray-500';
+
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-brand-light/20 transition">
+                            <td class="px-4 py-3 font-medium text-gray-900">${func.mat}</td>
+                            <td class="px-4 py-3 font-semibold text-gray-800">${func.nome}</td>
+                            <td class="px-4 py-3 text-xs text-gray-600">${func.cargo || '-'}</td>
+                            <td class="px-4 py-3 font-medium">${func.setor}</td>
+                            <td class="px-4 py-3">${new Date(func.admissao + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                            <td class="px-4 py-3"><span class="px-2 py-1 rounded text-[11px] font-bold uppercase ${statusBadge}">${func.status}</span></td>
+                            <td class="px-4 py-3 text-right print-hidden">
+                                <button class="text-brand-blue hover:underline text-xs font-medium">Editar</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            },
+
+            salvarFuncionario(e) {
+                e.preventDefault();
+                const mat = document.getElementById('mf-mat').value;
+                const nome = document.getElementById('mf-nome').value;
+                const cargo = document.getElementById('mf-cargo').value;
+                const adm = document.getElementById('mf-adm').value;
+                const setor = document.getElementById('mf-setor').value;
+
+                DB.funcionarios.push({
+                    id: Date.now(), mat, nome, cargo, admissao: adm, setor, status: 'Ativo'
+                });
+                
+                this.salvarDB();
+                this.closeModal('modal-func');
+                document.getElementById('form-func').reset();
+                this.showToast('Funcionário cadastrado!');
+                this.renderCadastro();
+                this.renderControleOptions();
+            },
+
+            renderControleOptions() {
+                const sel = document.getElementById('ctrl-func');
+                sel.innerHTML = '<option value="">-- Selecione --</option>';
+                // Ordenar por nome para facilitar encontrar na lista grande
+                const ativosOrdenados = DB.funcionarios.filter(f=>f.status==='Ativo').sort((a,b) => a.nome.localeCompare(b.nome));
+                
+                ativosOrdenados.forEach(f => {
+                    sel.innerHTML += `<option value="${f.id}">${f.mat} - ${f.nome}</option>`;
+                });
+            },
+
+            calcControleFields() {
+                const id = document.getElementById('ctrl-func').value;
+                if (!id) {
+                    document.getElementById('form-controle').reset();
+                    return;
+                }
+                const func = DB.funcionarios.find(f => f.id == id);
+                document.getElementById('ctrl-admissao').value = new Date(func.admissao + 'T12:00:00').toLocaleDateString('pt-BR');
+
+                const p = this.calcPeriodos(func.admissao);
+                document.getElementById('ctrl-aquisitivo').value = `${p.aqInicio.toLocaleDateString('pt-BR')} a ${p.aqFim.toLocaleDateString('pt-BR')}`;
+                document.getElementById('ctrl-limite').value = p.concFim.toLocaleDateString('pt-BR');
+
+                // Ignora os dias do período que está sendo editado no momento (se houver) para o saldo fazer sentido
+                const feriasAtuais = DB.ferias.filter(f => f.funcId == id && f.id !== this.editingFeriasId);
+                const gozados = feriasAtuais.reduce((acc, val) => acc + val.dias, 0);
+                
+                document.getElementById('ctrl-gozados').value = gozados;
+                document.getElementById('ctrl-saldo').value = 30 - gozados;
+            },
+
+            calcDataFim() {
+                const inicioStr = document.getElementById('ctrl-inicio').value;
+                const dias = parseInt(document.getElementById('ctrl-dias').value) || 0;
+                
+                if (inicioStr && dias > 0) {
+                    const dt = new Date(inicioStr + 'T12:00:00');
+                    dt.setDate(dt.getDate() + dias - 1);
+                    document.getElementById('ctrl-fim').value = dt.toISOString().split('T')[0];
+                }
+            },
+
+            editarFerias(id) {
+                const ferias = DB.ferias.find(f => f.id === id);
+                if (!ferias) return;
+
+                this.editingFeriasId = id;
+                
+                // Preencher o formulário
+                document.getElementById('ctrl-func').value = ferias.funcId;
+                this.calcControleFields(); // Recalcula saldo temporariamente sem esses dias
+                
+                document.getElementById('ctrl-inicio').value = ferias.inicio;
+                document.getElementById('ctrl-dias').value = ferias.dias;
+                this.calcDataFim(); // Calcula a data fim correspondente
+
+                // Mudar UI do formulário para modo edição
+                const btnSubmit = document.getElementById('btn-submit-ferias');
+                btnSubmit.innerText = 'Atualizar Período';
+                btnSubmit.classList.replace('bg-brand-blue', 'bg-status-yellow');
+                btnSubmit.classList.replace('hover:bg-brand-dark', 'hover:bg-yellow-600');
+                document.getElementById('btn-cancel-edit').classList.remove('hidden');
+
+                // Rolar a tela suavemente para o formulário no topo
+                document.getElementById('view-controle').scrollIntoView({ behavior: 'smooth' });
+                this.showToast('Modo de edição: Altere os dados e clique em Atualizar.');
+            },
+
+            cancelarEdicaoFerias() {
+                this.editingFeriasId = null;
+                document.getElementById('form-controle').reset();
+                this.calcControleFields();
+                
+                // Restaurar UI original do botão
+                const btnSubmit = document.getElementById('btn-submit-ferias');
+                btnSubmit.innerText = 'Registrar Período';
+                btnSubmit.classList.replace('bg-status-yellow', 'bg-brand-blue');
+                btnSubmit.classList.replace('hover:bg-yellow-600', 'hover:bg-brand-dark');
+                document.getElementById('btn-cancel-edit').classList.add('hidden');
+            },
+
+            salvarFerias(e) {
+                e.preventDefault();
+                const funcId = parseInt(document.getElementById('ctrl-func').value);
+                const inicio = document.getElementById('ctrl-inicio').value;
+                const fim = document.getElementById('ctrl-fim').value;
+                const dias = parseInt(document.getElementById('ctrl-dias').value);
+
+                if (this.editingFeriasId) {
+                    // Atualizar registro existente
+                    const index = DB.ferias.findIndex(f => f.id === this.editingFeriasId);
+                    if (index !== -1) {
+                        DB.ferias[index] = { ...DB.ferias[index], funcId, inicio, fim, dias };
+                        this.showToast('Período de férias atualizado com sucesso!');
+                    }
+                    this.cancelarEdicaoFerias(); // Limpa o estado e volta a tela ao normal
+                } else {
+                    // Inserir novo registro
+                    DB.ferias.push({ id: Date.now(), funcId, inicio, fim, dias });
+                    this.showToast('Período registrado na Planilha de Controle!');
+                    document.getElementById('ctrl-inicio').value = '';
+                    document.getElementById('ctrl-dias').value = '';
+                    document.getElementById('ctrl-fim').value = '';
+                }
+                
+                this.salvarDB(); 
+                this.calcControleFields(); 
+                this.renderControle();
+            },
+
+            excluirFerias(idFerias) {
+                if(confirm("Tem certeza que deseja excluir este período de férias?")) {
+                    DB.ferias = DB.ferias.filter(f => f.id !== idFerias);
+                    this.salvarDB();
+                    this.calcControleFields();
+                    this.renderControle();
+                    this.showToast('Período excluído com sucesso!');
+                }
+            },
+
+            exportarJSON() {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(DB));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                const dataHoje = new Date().toISOString().split('T')[0];
+                downloadAnchorNode.setAttribute("download", `mapa_ferias_backup_${dataHoje}.json`);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+                this.showToast('Backup (.json) gerado com sucesso!');
+            },
+
+            importarJSON(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importedData = JSON.parse(e.target.result);
+                        if (importedData.funcionarios && importedData.ferias) {
+                            DB = importedData;
+                            this.salvarDB(); 
+                            this.init();
+                            const activeTabId = document.querySelector('.tab-active').id.replace('tab-', '');
+                            this.switchTab(activeTabId);
+                            this.showToast('Dados importados com sucesso!');
+                        } else {
+                            alert('Erro: O arquivo não parece ser um backup válido deste sistema.');
+                        }
+                    } catch (err) {
+                        alert('Erro ao ler o arquivo: ' + err.message);
+                    }
+                    event.target.value = ''; 
+                };
+                reader.readAsText(file);
+            },
+
+            renderControle() {
+                const tbody = document.getElementById('tbody-controle');
+                
+                // Pegando os valores dos novos filtros
+                const searchName = (document.getElementById('ctrl-filter-nome')?.value || '').toLowerCase();
+                const filterStatus = document.getElementById('ctrl-filter-status')?.value || '';
+
+                tbody.innerHTML = '';
+                
+                // Ordenar férias pelas mais recentes inseridas (últimas no topo)
+                [...DB.ferias].reverse().forEach(f => {
+                    const func = DB.funcionarios.find(x => x.id === f.funcId);
+                    if(!func) return;
+                    
+                    // Aplicação do Filtro de Nome
+                    if (searchName && !func.nome.toLowerCase().includes(searchName) && !func.mat.toLowerCase().includes(searchName)) return;
+                    
+                    const p = this.calcPeriodos(func.admissao);
+                    const status = this.getStatusFerias(f.inicio, f.fim);
+                    
+                    // Aplicação do Filtro de Status
+                    if (filterStatus && status !== filterStatus) return;
+
+                    let statusColor = status === 'Gozando' ? 'text-status-green bg-green-50' : 
+                                     (status === 'Programada' ? 'text-status-yellow bg-yellow-50' : 'text-gray-500 bg-gray-50');
+
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-2 font-medium">${func.nome}</td>
+                            <td class="px-4 py-2 text-xs">${p.aqInicio.toLocaleDateString('pt-BR')} a ${p.aqFim.toLocaleDateString('pt-BR')}</td>
+                            <td class="px-4 py-2 text-xs font-semibold ${p.vencida ? 'text-status-red' : ''}">${p.concFim.toLocaleDateString('pt-BR')}</td>
+                            <td class="px-4 py-2 text-center text-xs">${new Date(f.inicio+'T12:00:00').toLocaleDateString('pt-BR')} - ${new Date(f.fim+'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                            <td class="px-4 py-2 text-center font-bold text-brand-blue">${f.dias}</td>
+                            <td class="px-4 py-2 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border border-current ${statusColor}">${status}</span></td>
+                            <td class="px-4 py-2 text-right print-hidden flex justify-end gap-3">
+                                <button class="text-brand-blue hover:text-blue-700 transition" onclick="app.editarFerias(${f.id})" title="Editar Período">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button class="text-status-red hover:text-red-700 transition" onclick="app.excluirFerias(${f.id})" title="Excluir Período">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            },
+
+            renderMapa() {
+                const grid = document.getElementById('map-grid');
+                const filterSetor = document.getElementById('map-filter-setor').value;
+                const filterNome = (document.getElementById('map-filter-nome')?.value || '').toLowerCase(); // Novo filtro
+                const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                
+                let html = `
+                    <!-- Linha de Cabeçalho -->
+                    <div class="sheet-cell sheet-header text-left">Nome do Funcionário</div>
+                    <div class="sheet-cell sheet-header">Cargo / Setor</div>
+                `;
+                meses.forEach(m => html += `<div class="sheet-cell sheet-header">${m}</div>`);
+
+                DB.funcionarios.forEach(func => {
+                    if (filterSetor && func.setor !== filterSetor) return;
+                    if (filterNome && !func.nome.toLowerCase().includes(filterNome)) return; // Aplicação do filtro
+                    
+                    const feriasFunc = DB.ferias.filter(f => f.funcId === func.id && f.inicio.startsWith(ANO_VIGENTE.toString()));
+                    const p = this.calcPeriodos(func.admissao);
+                    const saldo = 30 - feriasFunc.reduce((acc, val) => acc + val.dias, 0);
+                    
+                    let alertaVencida = (p.vencida && saldo > 0) ? `<i class="fa-solid fa-circle-exclamation text-status-red ml-2" title="Férias Vencidas!"></i>` : '';
+
+                    html += `
+                        <div class="sheet-cell text-left text-gray-800 ${func.status !== 'Ativo' ? 'opacity-50 line-through' : ''} cursor-pointer hover:bg-gray-50 transition" onclick="app.showFeriasDetails(${func.id})" title="Clique para ver detalhes do funcionário">
+                            <span class="font-semibold text-xs leading-tight">${func.nome}</span> ${alertaVencida}
+                        </div>
+                        <div class="sheet-cell flex-col items-center justify-center text-[10px] text-gray-500 text-center">
+                            <span class="font-bold text-gray-700">${func.setor}</span>
+                            <span class="truncate w-full max-w-[120px]" title="${func.cargo || ''}">${func.cargo || '-'}</span>
+                        </div>
+                    `;
+
+                    for(let i=1; i<=12; i++) {
+                        let cellContent = '';
+                        let cellClass = '';
+                        
+                        feriasFunc.forEach(f => {
+                            const mesIni = parseInt(f.inicio.split('-')[1]);
+                            if(mesIni === i) {
+                                const st = this.getStatusFerias(f.inicio, f.fim);
+                                // Adicionado cursor-pointer e hover para indicar que é clicável
+                                if (st === 'Programada') cellClass = 'bg-status-yellow text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                else cellClass = 'bg-status-green text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                cellContent = `${f.dias}d`;
+                            }
+                        });
+
+                        // Se tiver conteúdo (férias no mês), permite clicar para abrir o histórico
+                        html += `<div class="sheet-cell ${cellClass}" ${cellContent ? `onclick="app.showFeriasDetails(${func.id})"` : ''} title="${cellContent ? 'Ver detalhes das férias' : ''}">${cellContent}</div>`;
+                    }
+                });
+
+                grid.innerHTML = html;
+            },
+
+            init() {
+                this.renderControleOptions();
+                this.switchTab('mapa'); 
+            },
+
+            // NOVA FUNÇÃO: Mostrar histórico do funcionário ao clicar no mapa
+            showFeriasDetails(funcId) {
+                const func = DB.funcionarios.find(f => f.id === funcId);
+                if (!func) return;
+
+                const p = this.calcPeriodos(func.admissao);
+                const ferias = DB.ferias.filter(f => f.funcId === funcId);
+                const gozados = ferias.reduce((acc, val) => acc + val.dias, 0);
+                const saldo = 30 - gozados;
+
+                document.getElementById('md-func-info').innerHTML = `
+                    <div class="col-span-2 md:col-span-4 border-b pb-2 mb-2 flex justify-between items-end">
+                        <div>
+                            <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Colaborador</p>
+                            <p class="text-lg font-bold text-brand-blue leading-tight">${func.nome}</p>
+                        </div>
+                        <span class="text-xs font-bold bg-gray-200 text-gray-700 px-2 py-1 rounded">Mat: ${func.mat}</span>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Setor / Turno</p>
+                        <p class="text-sm font-semibold text-gray-900">${func.setor}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Cargo</p>
+                        <p class="text-sm font-semibold text-gray-900 truncate" title="${func.cargo || '-'}">${func.cargo || '-'}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Admissão</p>
+                        <p class="text-sm font-semibold text-gray-900">${new Date(func.admissao + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Saldo de Férias</p>
+                        <p class="text-sm font-bold ${saldo > 0 && p.vencida ? 'text-status-red' : 'text-brand-blue'}">${saldo} dias restantes</p>
+                    </div>
+                `;
+
+                const tbody = document.getElementById('md-tbody-ferias');
+                tbody.innerHTML = '';
+                
+                if (ferias.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Nenhum período de férias registrado até o momento.</td></tr>';
+                } else {
+                    // Ordena da mais recente para a mais antiga
+                    [...ferias].sort((a,b) => new Date(b.inicio) - new Date(a.inicio)).forEach(f => {
+                        const status = this.getStatusFerias(f.inicio, f.fim);
+                        let statusColor = status === 'Gozando' ? 'text-status-green bg-green-50 border-status-green' : 
+                                         (status === 'Programada' ? 'text-status-yellow bg-yellow-50 border-status-yellow' : 'text-gray-500 bg-gray-50 border-gray-300');
+                        
+                        tbody.innerHTML += `
+                            <tr class="hover:bg-brand-light/20 transition">
+                                <td class="px-4 py-3 font-medium text-gray-800">${new Date(f.inicio + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                                <td class="px-4 py-3 font-medium text-gray-800">${new Date(f.fim + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                                <td class="px-4 py-3 text-center font-bold text-brand-blue">${f.dias}</td>
+                                <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border ${statusColor}">${status}</span></td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                this.openModal('modal-details');
+            }
+        };
+
+        app.init();
+    </script>
+</body>
+</html>

@@ -5,6 +5,7 @@ Sistema de controle operacional e RH, pronto para ser versionado no GitHub e pub
 ## Estrutura
 
 - `index.html`: aplicação completa.
+- `mapa-ferias.html`: módulo independente exibido na nova aba **Mapa de Férias**.
 - `vercel.json`: configuração do site no Vercel.
 - `firestore.rules`: regras de acesso do Cloud Firestore.
 - `firebase.json` e `.firebaserc`: configuração opcional para publicar as regras pelo Firebase CLI.
@@ -36,6 +37,8 @@ git push -u origin main
 6. Clique em **Deploy**.
 
 O sistema é formado por HTML e JavaScript executados no navegador, portanto não necessita de etapa de build.
+
+O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O mapa mantém seu próprio cadastro, períodos de férias e backup local, sem remover ou modificar os módulos anteriores do CSVA RH.
 
 ## 3. Autorizar o domínio no Firebase
 
