@@ -214,6 +214,51 @@
           return null;
         };
 
+        const VACATION_RECORD_MARKER = 'FE: Mapa de Férias';
+
+        const isVacationApproved = (vacation) => !vacation.status || vacation.status === 'APROVADA';
+
+        const forEachDateInRange = (startDateStr, endDateStr, callback) => {
+          if (!startDateStr || !endDateStr) return;
+          const current = createLocalDate(startDateStr);
+          const end = createLocalDate(endDateStr);
+          while (current <= end) {
+            callback(toLocalISODate(current));
+            current.setDate(current.getDate() + 1);
+          }
+        };
+
+        const syncVacationRecords = (currentRecords, previousVacations, nextVacations) => {
+          const updatedRecords = { ...currentRecords };
+
+          (previousVacations || []).filter(isVacationApproved).forEach(vacation => {
+            forEachDateInRange(vacation.inicio, vacation.fim, dateStr => {
+              const dayRecords = updatedRecords[dateStr];
+              if (!dayRecords) return;
+              const statuses = normalizeStatuses(dayRecords[vacation.funcId]).filter(status => status !== VACATION_RECORD_MARKER);
+              updatedRecords[dateStr] = {
+                ...dayRecords,
+                [vacation.funcId]: statuses.length > 0 ? statuses : null
+              };
+            });
+          });
+
+          (nextVacations || []).filter(isVacationApproved).forEach(vacation => {
+            forEachDateInRange(vacation.inicio, vacation.fim, dateStr => {
+              const dayRecords = updatedRecords[dateStr] || {};
+              const statuses = normalizeStatuses(dayRecords[vacation.funcId]);
+              updatedRecords[dateStr] = {
+                ...dayRecords,
+                [vacation.funcId]: statuses.includes(VACATION_RECORD_MARKER)
+                  ? statuses
+                  : [...statuses, VACATION_RECORD_MARKER]
+              };
+            });
+          });
+
+          return updatedRecords;
+        };
+
         let accessRequestApp = null;
 
         const getAccessRequestServices = () => {
@@ -498,6 +543,10 @@
             const saved = localStorage.getItem('csva_audit_logs_v1');
             return saved ? JSON.parse(saved) : [];
           });
+          const [vacations, setVacations] = useState(() => {
+            const saved = localStorage.getItem('csva_vacations_v1');
+            return saved ? JSON.parse(saved) : [];
+          });
 
           const [cloudStatus, setCloudStatus] = useState(db ? 'connecting' : 'offline');
           const [isInitialLoad, setIsInitialLoad] = useState(!!db);
@@ -605,6 +654,7 @@
                    if (data.punishments) setPunishments(data.punishments);
                    if (data.reminders) setReminders(data.reminders);
                    if (data.auditLogs) setAuditLogs(data.auditLogs);
+                   if (data.vacations) setVacations(data.vacations);
                 }
                 setCloudStatus('synced');
               } catch (err) {
@@ -623,6 +673,7 @@
             localStorage.setItem('csva_punishments_v5', JSON.stringify(punishments));
             localStorage.setItem('csva_reminders_v1', JSON.stringify(reminders)); 
             localStorage.setItem('csva_audit_logs_v1', JSON.stringify(auditLogs)); 
+            localStorage.setItem('csva_vacations_v1', JSON.stringify(vacations));
 
             if (isInitialLoad || !db || !user) return;
 
@@ -630,7 +681,7 @@
               setCloudStatus('syncing');
               try {
                  const docRef = db.collection('sistema_rh_dados').doc('dados_principais');
-                 await docRef.set({ employees, records, punishments, reminders, auditLogs, updatedAt: new Date().toISOString() });
+                 await docRef.set({ employees, records, punishments, reminders, auditLogs, vacations, updatedAt: new Date().toISOString() });
                  setCloudStatus('synced');
               } catch (err) {
                  console.error("Erro ao salvar na nuvem", err);
@@ -640,7 +691,7 @@
 
             const timeoutId = setTimeout(saveToCloud, 1500); 
             return () => clearTimeout(timeoutId);
-          }, [employees, records, punishments, reminders, auditLogs, isInitialLoad, user]);
+          }, [employees, records, punishments, reminders, auditLogs, vacations, isInitialLoad, user]);
 
           const toggleRecordStatus = (date, empId, status) => {
             if (!status) return;
@@ -668,6 +719,7 @@
           const applyBulkRecords = (empId, status, startDateStr, endDateStr) => {
             const emp = employees.find(e => e.id === empId);
             logAction('LANÇOU_LICENÇA/FÉRIAS', `Lançou [${status}] para ${emp?.name || empId} do dia ${formatDateBR(startDateStr)} até ${formatDateBR(endDateStr)}`);
+            const appliedStatus = status === 'FE' ? VACATION_RECORD_MARKER : status;
 
             setRecords(prev => {
               const newState = { ...prev };
@@ -677,14 +729,42 @@
                 const dateStr = toLocalISODate(curr);
                 const dayRecords = newState[dateStr] || {};
                 let currentStatuses = normalizeStatuses(dayRecords[empId]);
-                if (!currentStatuses.includes(status)) {
-                  currentStatuses = [...currentStatuses, status];
+                if (!currentStatuses.includes(appliedStatus)) {
+                  currentStatuses = [...currentStatuses, appliedStatus];
                 }
                 newState[dateStr] = { ...dayRecords, [empId]: currentStatuses };
                 curr.setDate(curr.getDate() + 1);
               }
               return newState;
             });
+
+            if (status === 'FE') {
+              const start = createLocalDate(startDateStr);
+              const end = createLocalDate(endDateStr);
+              const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+              const vacationId = `LICENCAS-${empId}-${startDateStr}-${endDateStr}`;
+
+              setVacations(previousVacations => {
+                const existingIndex = previousVacations.findIndex(vacation =>
+                  String(vacation.funcId) === String(empId)
+                  && vacation.inicio === startDateStr
+                  && vacation.fim === endDateStr
+                );
+                const vacation = {
+                  id: existingIndex >= 0 ? previousVacations[existingIndex].id : vacationId,
+                  funcId: String(empId),
+                  inicio: startDateStr,
+                  fim: endDateStr,
+                  dias: days,
+                  status: 'APROVADA',
+                  source: 'FERIAS_LICENCAS',
+                  approvedAt: new Date().toISOString()
+                };
+
+                if (existingIndex < 0) return [...previousVacations, vacation];
+                return previousVacations.map((item, index) => index === existingIndex ? { ...item, ...vacation } : item);
+              });
+            }
           };
 
           const clearFutureRecords = (empId, returnDateStr) => {
@@ -698,13 +778,82 @@
                    const dayRecords = newState[dateStr];
                    if (dayRecords && dayRecords[empId]) {
                       let statuses = normalizeStatuses(dayRecords[empId]);
-                      statuses = statuses.filter(s => s !== 'FE' && s !== 'ATS' && s !== 'INSS');
+                      statuses = statuses.filter(s => s !== 'FE' && s !== VACATION_RECORD_MARKER && s !== 'ATS' && s !== 'INSS');
                       newState[dateStr] = { ...dayRecords, [empId]: statuses.length > 0 ? statuses : null };
                    }
                 }
               });
               return newState;
             });
+
+            setVacations(previousVacations => previousVacations.map(vacation => {
+              if (!isVacationApproved(vacation) || String(vacation.funcId) !== String(empId) || vacation.fim < returnDateStr) {
+                return vacation;
+              }
+              if (vacation.inicio >= returnDateStr) {
+                return {
+                  ...vacation,
+                  status: 'RECUSADA',
+                  returnRegisteredAt: new Date().toISOString()
+                };
+              }
+
+              const newEnd = createLocalDate(returnDateStr);
+              newEnd.setDate(newEnd.getDate() - 1);
+              const start = createLocalDate(vacation.inicio);
+              const days = Math.max(1, Math.round((newEnd - start) / (1000 * 60 * 60 * 24)) + 1);
+              return {
+                ...vacation,
+                fim: toLocalISODate(newEnd),
+                dias: days,
+                returnRegisteredAt: new Date().toISOString()
+              };
+            }));
+          };
+
+          const handleVacationMapChange = (nextVacations, action) => {
+            const normalizedVacations = Array.isArray(nextVacations)
+              ? nextVacations.map(vacation => ({
+                  ...vacation,
+                  funcId: String(vacation.funcId),
+                  status: vacation.status || 'APROVADA'
+                }))
+              : [];
+
+            setRecords(previousRecords => syncVacationRecords(previousRecords, vacations, normalizedVacations));
+            setVacations(normalizedVacations);
+
+            if (action?.type && action?.details) {
+              logAction(action.type, action.details);
+            }
+          };
+
+          const handleVacationEmployeeCreate = (candidate) => {
+            const employeeId = String(candidate?.mat || candidate?.id || '').trim();
+            const employeeName = String(candidate?.nome || candidate?.name || '').trim();
+
+            if (!employeeId || !employeeName) {
+              return { success: false, message: 'Matrícula e nome são obrigatórios.' };
+            }
+            if (employees.some(employee => String(employee.id) === employeeId)) {
+              return { success: false, message: 'Já existe um funcionário com esta matrícula.' };
+            }
+
+            const newEmployee = {
+              id: employeeId,
+              name: employeeName,
+              role: candidate.cargo || 'A Definir',
+              shift: candidate.setor || 'Geral',
+              schedule: candidate.horario || 'A Definir',
+              admissionDate: candidate.admissao || '-',
+              supervisor: 'A Definir',
+              contact: candidate.contato || '-',
+              status: 'Ativo'
+            };
+
+            setEmployees(previousEmployees => [...previousEmployees, newEmployee]);
+            logAction('CADASTRAR_FUNCIONÁRIO_MAPA', `Cadastrou ${employeeName} (Matrícula: ${employeeId}) pelo Mapa de Férias`);
+            return { success: true, message: 'Funcionário incluído no cadastro principal.' };
           };
 
           const handleLogout = () => {
@@ -777,14 +926,14 @@
                   {activeTab === 'dashboard' && <DashboardView employees={employees} records={records} reminders={reminders} />}
                   {activeTab === 'lancamento' && <DailyEntryView employees={employees} records={records} onToggle={toggleRecordStatus} applyBulkRecords={applyBulkRecords} />}
                   {activeTab === 'licencas' && <LeavesView employees={employees} applyBulkRecords={applyBulkRecords} clearFutureRecords={clearFutureRecords} logAction={logAction} />}
-                  {activeTab === 'mapa-ferias' && <VacationMapView />}
+                  {activeTab === 'mapa-ferias' && <VacationMapView employees={employees} vacations={vacations} isAdmin={isAdmin} onVacationsChange={handleVacationMapChange} onEmployeeCreate={handleVacationEmployeeCreate} />}
                   {activeTab === 'relatorio' && <CycleReportView employees={employees} records={records} />}
                   {activeTab === 'punicao' && <PunishmentView employees={employees} punishments={punishments} setPunishments={setPunishments} logAction={logAction} />}
                   {activeTab === 'funcionarios' && <EmployeesView employees={employees} setEmployees={setEmployees} records={records} logAction={logAction} />}
                   {activeTab === 'lembretes' && <RemindersView employees={employees} reminders={reminders} setReminders={setReminders} logAction={logAction} />}
                   {activeTab === 'acessos' && isAdmin && <AccessManagementView logAction={logAction} />}
                   {activeTab === 'auditoria' && <AuditLogView logs={auditLogs} />}
-                  {activeTab === 'backup' && <BackupView employees={employees} records={records} punishments={punishments} reminders={reminders} auditLogs={auditLogs} setEmployees={setEmployees} setRecords={setRecords} setPunishments={setPunishments} setReminders={setReminders} cloudStatus={cloudStatus} />}
+                  {activeTab === 'backup' && <BackupView employees={employees} records={records} punishments={punishments} reminders={reminders} vacations={vacations} auditLogs={auditLogs} setEmployees={setEmployees} setRecords={setRecords} setPunishments={setPunishments} setReminders={setReminders} setVacations={setVacations} cloudStatus={cloudStatus} />}
                 </div>
               </main>
             </div>
@@ -800,14 +949,66 @@
           );
         }
 
-        function VacationMapView() {
+        function VacationMapView({ employees, vacations, isAdmin, onVacationsChange, onEmployeeCreate }) {
+          const iframeRef = React.useRef(null);
+
+          const sendCurrentData = () => {
+            if (!iframeRef.current?.contentWindow) return;
+            const mappedEmployees = employees.map(employee => ({
+              id: String(employee.id),
+              mat: String(employee.id),
+              nome: employee.name || '',
+              cargo: employee.role || 'A Definir',
+              setor: employee.shift || 'Geral',
+              horario: employee.schedule || 'A Definir',
+              contato: employee.contact || '-',
+              admissao: employee.admissionDate || '-',
+              status: employee.status || 'Ativo'
+            }));
+
+            iframeRef.current.contentWindow.postMessage({
+              type: 'CSVA_MAP_INIT',
+              employees: mappedEmployees,
+              vacations,
+              isAdmin
+            }, '*');
+          };
+
+          useEffect(() => {
+            sendCurrentData();
+          }, [employees, vacations, isAdmin]);
+
+          useEffect(() => {
+            const handleMapMessage = (event) => {
+              if (event.source !== iframeRef.current?.contentWindow) return;
+              const message = event.data || {};
+
+              if (message.type === 'CSVA_MAP_READY') {
+                sendCurrentData();
+              } else if (message.type === 'CSVA_VACATIONS_UPDATE') {
+                onVacationsChange(message.vacations, message.action);
+              } else if (message.type === 'CSVA_EMPLOYEE_CREATE') {
+                const result = onEmployeeCreate(message.employee);
+                iframeRef.current?.contentWindow?.postMessage({
+                  type: 'CSVA_EMPLOYEE_CREATE_RESULT',
+                  ...result
+                }, '*');
+              }
+            };
+
+            window.addEventListener('message', handleMapMessage);
+            return () => window.removeEventListener('message', handleMapMessage);
+          }, [employees, vacations, isAdmin, onVacationsChange, onEmployeeCreate]);
+
           return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
               <iframe
+                ref={iframeRef}
                 src="./mapa-ferias.html"
                 title="Mapa de Férias Pro"
                 className="w-full h-full border-0 bg-gray-50"
                 loading="eager"
+                onLoad={sendCurrentData}
               />
             </div>
           );
@@ -1551,6 +1752,8 @@
           const [searchTerm, setSearchTerm] = useState('');
           const [filterShift, setFilterShift] = useState('');
           const [filterRole, setFilterRole] = useState('');
+          const [filterSchedule, setFilterSchedule] = useState('');
+          const [filterContact, setFilterContact] = useState('');
           const [filterStatus, setFilterStatus] = useState('Ativo');
           const [isBulkImport, setIsBulkImport] = useState(false);
           const [bulkData, setBulkData] = useState('');
@@ -1566,6 +1769,11 @@
           const availableRoles = useMemo(() => {
             const roles = new Set(employees.map(e => e.role || 'Sem cargo'));
             return Array.from(roles).sort();
+          }, [employees]);
+
+          const availableSchedules = useMemo(() => {
+            const schedules = new Set(employees.map(e => e.schedule || 'Não definido'));
+            return Array.from(schedules).sort();
           }, [employees]);
 
           const handleShiftChange = (val, setShiftFn, setScheduleFn) => {
@@ -1719,11 +1927,14 @@
 
           const filteredEmployees = employees.filter(emp => {
             const searchLow = searchTerm.toLowerCase();
-            const matchesSearch = (emp.name.toLowerCase().includes(searchLow) || emp.id.toLowerCase().includes(searchLow) || emp.role.toLowerCase().includes(searchLow));
+            const contactLow = filterContact.toLowerCase();
+            const matchesSearch = ((emp.name || '').toLowerCase().includes(searchLow) || String(emp.id || '').toLowerCase().includes(searchLow));
             const matchesShift = filterShift ? (emp.shift || 'Geral') === filterShift : true;
             const matchesRole = filterRole ? (emp.role || 'Sem cargo') === filterRole : true;
+            const matchesSchedule = filterSchedule ? (emp.schedule || 'Não definido') === filterSchedule : true;
+            const matchesContact = contactLow ? (emp.contact || '').toLowerCase().includes(contactLow) : true;
             const matchesStatus = filterStatus ? emp.status === filterStatus : true;
-            return matchesSearch && matchesShift && matchesRole && matchesStatus;
+            return matchesSearch && matchesShift && matchesRole && matchesSchedule && matchesContact && matchesStatus;
           });
 
           // --- FUNÇÃO PARA EXPORTAR EXCEL ---
@@ -1875,6 +2086,42 @@
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                       <tr><th className="p-4 font-bold border-b w-1/4">Funcionário & Matrícula</th><th className="p-4 font-bold border-b">Cargo / Função</th><th className="p-4 font-bold border-b">Turno & Horário</th><th className="p-4 font-bold border-b">Contato</th><th className="p-4 font-bold border-b text-center">Status</th><th className="p-4 font-bold border-b text-center">Ações</th></tr>
+                      <tr className="bg-white normal-case tracking-normal">
+                        <th className="p-2 border-b align-top">
+                          <input type="text" placeholder="Filtrar nome ou matrícula" className="w-full min-w-[190px] border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        </th>
+                        <th className="p-2 border-b align-top">
+                          <select className="w-full min-w-[160px] border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
+                            <option value="">Todas as funções</option>
+                            {availableRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                          </select>
+                        </th>
+                        <th className="p-2 border-b align-top">
+                          <div className="flex flex-col gap-1.5 min-w-[180px]">
+                            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={filterShift} onChange={(e) => setFilterShift(e.target.value)}>
+                              <option value="">Todos os turnos</option>
+                              {availableShifts.map(shift => <option key={shift} value={shift}>{shift}</option>)}
+                            </select>
+                            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={filterSchedule} onChange={(e) => setFilterSchedule(e.target.value)}>
+                              <option value="">Todos os horários</option>
+                              {availableSchedules.map(schedule => <option key={schedule} value={schedule}>{schedule}</option>)}
+                            </select>
+                          </div>
+                        </th>
+                        <th className="p-2 border-b align-top">
+                          <input type="text" placeholder="Filtrar contato" className="w-full min-w-[130px] border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500" value={filterContact} onChange={(e) => setFilterContact(e.target.value)} />
+                        </th>
+                        <th className="p-2 border-b align-top">
+                          <select className="w-full min-w-[110px] border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                            <option value="">Todos</option>
+                            <option value="Ativo">Ativos</option>
+                            <option value="Inativo">Inativos</option>
+                          </select>
+                        </th>
+                        <th className="p-2 border-b text-center align-top">
+                          <button type="button" onClick={() => { setSearchTerm(''); setFilterRole(''); setFilterShift(''); setFilterSchedule(''); setFilterContact(''); setFilterStatus(''); }} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold whitespace-nowrap transition">Limpar filtros</button>
+                        </th>
+                      </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {filteredEmployees.map(emp => (
@@ -2330,10 +2577,10 @@
           );
         }
 
-        function BackupView({ employees, records, punishments, reminders, setEmployees, setRecords, setPunishments, setReminders, cloudStatus }) {
+        function BackupView({ employees, records, punishments, reminders, vacations, setEmployees, setRecords, setPunishments, setReminders, setVacations, cloudStatus }) {
           const [importStatus, setImportStatus] = useState('');
           const handleExport = () => {
-            const allData = { version: '5.0', exportDate: new Date().toISOString(), employees, records, punishments, reminders };
+            const allData = { version: '6.0', exportDate: new Date().toISOString(), employees, records, punishments, reminders, vacations };
             const dataStr = JSON.stringify(allData, null, 2);
             const blob = new Blob([dataStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
@@ -2351,6 +2598,7 @@
                   setEmployees(importedData.employees); setRecords(importedData.records);
                   if (importedData.punishments) setPunishments(importedData.punishments);
                   if (importedData.reminders) setReminders(importedData.reminders);
+                  if (importedData.vacations) setVacations(importedData.vacations);
                   setImportStatus('success'); setTimeout(() => setImportStatus(''), 5000);
                 } else { setImportStatus('error'); }
               } catch (error) { setImportStatus('error'); }

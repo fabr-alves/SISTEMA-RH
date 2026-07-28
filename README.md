@@ -38,7 +38,22 @@ git push -u origin main
 
 O sistema é formado por HTML e JavaScript executados no navegador, portanto não necessita de etapa de build.
 
-O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O mapa mantém seu próprio cadastro, períodos de férias e backup local, sem remover ou modificar os módulos anteriores do CSVA RH.
+O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O mapa usa o cadastro e o banco de dados do CSVA RH, preservando também o backup local como segurança adicional.
+
+## Integrações do Mapa de Férias
+
+- Os funcionários do mapa são carregados automaticamente do cadastro principal.
+- Um funcionário cadastrado pelo mapa também é incluído no cadastro principal.
+- Novos períodos entram na fila de aprovação.
+- Somente o administrador pode aprovar ou recusar solicitações.
+- Férias aprovadas lançam automaticamente `FE` nas ocorrências diárias.
+- Férias lançadas pela tela **Férias e Licenças** aparecem no mapa como aprovadas.
+- Alterações e retornos antecipados atualizam os períodos sincronizados.
+- O sistema detecta sobreposição para o mesmo funcionário e coincidências no mesmo turno/setor.
+- O mapa possui filtros por funcionário, matrícula, cargo, turno/setor, status, aprovação e mês.
+- Os relatórios podem ser exportados em CSV compatível com Excel ou impressos/salvos como PDF.
+
+Na lista principal de funcionários existe uma segunda linha de filtros abaixo dos títulos das colunas, permitindo filtrar nome/matrícula, função, turno, horário, contato e status.
 
 ## 3. Autorizar o domínio no Firebase
 

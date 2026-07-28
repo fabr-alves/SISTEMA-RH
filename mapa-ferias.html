@@ -106,8 +106,12 @@
                         <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Backup</span>
                     </button>
 
+                    <button onclick="app.exportarCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded text-sm font-medium transition flex items-center gap-2 shadow-sm print-hidden">
+                        <i class="fa-solid fa-file-excel"></i> <span class="hidden sm:inline">Excel</span>
+                    </button>
+
                     <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded text-sm font-medium transition flex items-center gap-2 shadow-sm">
-                        <i class="fa-solid fa-print"></i> <span class="hidden sm:inline">Imprimir Relatório</span>
+                        <i class="fa-solid fa-print"></i> <span class="hidden sm:inline">Imprimir / PDF</span>
                     </button>
                 </div>
             </div>
@@ -122,6 +126,9 @@
                 </button>
                 <button onclick="app.switchTab('controle')" id="tab-controle" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
                     <i class="fa-solid fa-clipboard-list mr-2"></i>Controle de Períodos
+                </button>
+                <button onclick="app.switchTab('aprovacoes')" id="tab-aprovacoes" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-user-check mr-2"></i>Aprovações <span id="badge-aprovacoes" class="ml-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px]">0</span>
                 </button>
                 <button onclick="app.switchTab('mapa')" id="tab-mapa" class="tab-inactive pb-3 px-1 transition whitespace-nowrap">
                     <i class="fa-solid fa-calendar-days mr-2"></i>Mapa Anual de Férias
@@ -207,6 +214,7 @@
                     <select id="cad-filter-status" class="border rounded px-3 py-1.5 text-sm bg-white" onchange="app.renderCadastro()">
                         <option value="">Todos os Status</option>
                         <option value="Ativo">Ativo</option>
+                        <option value="Inativo">Inativo</option>
                         <option value="Afastado">Afastado</option>
                         <option value="Desligado">Desligado</option>
                     </select>
@@ -240,7 +248,7 @@
             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 print-hidden">
                 <h3 class="text-sm font-bold text-gray-800 mb-4 border-b pb-2 flex justify-between items-center">
                     <span>Lançamento de Períodos de Férias</span>
-                    <span class="text-xs text-brand-blue font-normal"><i class="fa-solid fa-lock text-gray-400"></i> Fórmulas Automáticas</span>
+                    <span class="text-xs text-brand-blue font-normal"><i class="fa-solid fa-shield-check text-gray-400"></i> Envio sujeito à aprovação</span>
                 </h3>
                 
                 <form id="form-controle" onsubmit="app.salvarFerias(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -292,7 +300,7 @@
                     </div>
                     <div class="flex flex-col gap-2">
                         <button type="submit" id="btn-submit-ferias" class="w-full bg-brand-blue hover:bg-brand-dark text-white px-4 py-2 rounded text-sm font-medium transition shadow-sm">
-                            Registrar Período
+                            Enviar para Aprovação
                         </button>
                         <button type="button" id="btn-cancel-edit" onclick="app.cancelarEdicaoFerias()" class="hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm font-medium transition shadow-sm">
                             Cancelar Edição
@@ -317,6 +325,13 @@
                             <option value="Programada">Programada</option>
                             <option value="Concluída">Concluída</option>
                         </select>
+                        <select id="ctrl-filter-aprovacao" onchange="app.renderControle()" class="border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-brand-blue bg-white">
+                            <option value="">Aprovação: Todas</option>
+                            <option value="PLANEJADA">Planejada</option>
+                            <option value="SOLICITADA">Aguardando</option>
+                            <option value="APROVADA">Aprovada</option>
+                            <option value="RECUSADA">Recusada</option>
+                        </select>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
@@ -329,6 +344,7 @@
                                 <th class="px-4 py-3 text-center">Início - Fim</th>
                                 <th class="px-4 py-3 text-center">Dias</th>
                                 <th class="px-4 py-3 text-center">Status</th>
+                                <th class="px-4 py-3 text-center">Aprovação</th>
                                 <th class="px-4 py-3 text-right print-hidden">Ações</th>
                             </tr>
                         </thead>
@@ -340,30 +356,107 @@
             </div>
         </div>
 
-        <!-- 4. MAPA DE FÉRIAS ANUAL (A visão tipo Planilha) -->
+        <!-- 4. FILA DE APROVAÇÕES -->
+        <div id="view-aprovacoes" class="hidden space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-amber-500">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Aguardando</p>
+                    <p id="approval-count-pending" class="text-3xl font-bold text-amber-600 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-emerald-500">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Aprovadas</p>
+                    <p id="approval-count-approved" class="text-3xl font-bold text-emerald-600 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-red-500">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Recusadas</p>
+                    <p id="approval-count-rejected" class="text-3xl font-bold text-red-600 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-purple-500">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Com conflitos</p>
+                    <p id="approval-count-conflicts" class="text-3xl font-bold text-purple-600 mt-1">0</p>
+                </div>
+            </div>
+
+            <div id="approval-admin-note" class="hidden bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg text-sm font-medium">
+                <i class="fa-solid fa-circle-info mr-2"></i>Você pode acompanhar as solicitações, mas somente o administrador pode aprovar ou recusar períodos.
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div class="p-4 bg-gray-50 border-b border-gray-200 flex flex-col lg:flex-row gap-3 justify-between">
+                    <div>
+                        <h3 class="font-bold text-gray-800">Fila de solicitações</h3>
+                        <p class="text-xs text-gray-500 mt-1">A aprovação lança automaticamente “FE” nas ocorrências diárias.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <input id="approval-filter-search" type="text" placeholder="Nome ou matrícula" oninput="app.renderAprovacoes()" class="border rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand-blue">
+                        <select id="approval-filter-setor" onchange="app.renderAprovacoes()" class="border rounded px-3 py-2 text-sm bg-white">
+                            <option value="">Todos os turnos/setores</option>
+                        </select>
+                        <button onclick="app.exportarCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded text-sm font-semibold"><i class="fa-solid fa-file-excel mr-1"></i> Excel</button>
+                        <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-3 py-2 rounded text-sm font-semibold"><i class="fa-solid fa-print mr-1"></i> PDF</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-100 border-b">
+                            <tr>
+                                <th class="px-4 py-3">Funcionário</th>
+                                <th class="px-4 py-3">Turno / Cargo</th>
+                                <th class="px-4 py-3 text-center">Período</th>
+                                <th class="px-4 py-3 text-center">Dias</th>
+                                <th class="px-4 py-3 text-center">Conflitos</th>
+                                <th class="px-4 py-3 text-center">Situação</th>
+                                <th class="px-4 py-3 text-right print-hidden">Decisão</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-aprovacoes" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. MAPA DE FÉRIAS ANUAL (A visão tipo Planilha) -->
         <div id="view-mapa" class="hidden h-full flex flex-col">
             <div class="bg-white p-3 rounded-t-lg border border-gray-200 border-b-0 flex flex-wrap gap-4 items-center print-hidden">
                 <select id="map-filter-setor" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
-                    <option value="">Filtrar: Todos os Setores</option>
-                    <option value="Engenh">Engenharia</option>
-                    <option value="A">Turno A</option>
-                    <option value="B">Turno B</option>
-                    <option value="C">Turno C</option>
-                    <option value="OBRA">Obra</option>
-                    <option value="APOIO">Apoio</option>
-                    <option value="OFICINA">Oficina</option>
-                    <option value="LIMP INT">Limpeza Interna</option>
+                    <option value="">Todos os turnos/setores</option>
                 </select>
 
-                <!-- Novo Filtro de Nome no Mapa -->
                 <div class="relative w-full max-w-xs">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
-                    <input type="text" id="map-filter-nome" placeholder="Buscar por nome..." class="w-full border rounded pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-1 focus:ring-brand-blue" oninput="app.renderMapa()">
+                    <input type="text" id="map-filter-nome" placeholder="Nome ou matrícula..." class="w-full border rounded pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-1 focus:ring-brand-blue" oninput="app.renderMapa()">
                 </div>
-                
+
+                <select id="map-filter-cargo" class="border rounded px-3 py-1.5 text-sm bg-white font-medium max-w-[180px]" onchange="app.renderMapa()">
+                    <option value="">Todos os cargos</option>
+                </select>
+
+                <select id="map-filter-status-func" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
+                    <option value="">Todos os funcionários</option>
+                    <option value="Ativo">Ativos</option>
+                    <option value="Inativo">Inativos</option>
+                </select>
+
+                <select id="map-filter-status-ferias" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
+                    <option value="">Todas as aprovações</option>
+                    <option value="PLANEJADA">Planejadas</option>
+                    <option value="SOLICITADA">Aguardando</option>
+                    <option value="APROVADA">Aprovadas</option>
+                    <option value="RECUSADA">Recusadas</option>
+                </select>
+
+                <select id="map-filter-mes" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
+                    <option value="">Todos os meses</option>
+                    <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+                    <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+                    <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+                    <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                </select>
+                 
                 <div class="flex gap-4 text-xs font-medium ml-auto">
                     <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-green rounded"></span> Gozadas/Gozando</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-yellow rounded"></span> Programadas</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-blue-500 rounded"></span> Aguardando</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 bg-status-red rounded"></span> Alerta Vencidas</span>
                 </div>
             </div>
@@ -574,17 +667,51 @@
             localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
         }
 
+        DB.funcionarios = Array.isArray(DB.funcionarios) ? DB.funcionarios : [];
+        DB.ferias = Array.isArray(DB.ferias) ? DB.ferias.map(ferias => ({
+            ...ferias,
+            funcId: String(ferias.funcId),
+            status: ferias.status || 'APROVADA'
+        })) : [];
+
+        const APP_CONTEXT = {
+            isAdmin: false,
+            parentConnected: false
+        };
+
+        const APPROVAL_LABELS = {
+            PLANEJADA: 'Planejada',
+            SOLICITADA: 'Aguardando',
+            APROVADA: 'Aprovada',
+            RECUSADA: 'Recusada'
+        };
+
+        const APPROVAL_CLASSES = {
+            PLANEJADA: 'bg-slate-100 text-slate-700 border-slate-300',
+            SOLICITADA: 'bg-amber-100 text-amber-800 border-amber-300',
+            APROVADA: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            RECUSADA: 'bg-red-100 text-red-700 border-red-300'
+        };
+
         const app = {
             chartMonthsInstance: null,
             chartSectorsInstance: null,
             editingFeriasId: null,
+            pendingEmployee: null,
 
-            salvarDB() {
+            salvarDB(action = null) {
                 localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
+                if (APP_CONTEXT.parentConnected) {
+                    window.parent.postMessage({
+                        type: 'CSVA_VACATIONS_UPDATE',
+                        vacations: DB.ferias,
+                        action
+                    }, '*');
+                }
             },
 
             switchTab(tabId) {
-                ['dashboard', 'cadastro', 'controle', 'mapa'].forEach(id => {
+                ['dashboard', 'cadastro', 'controle', 'aprovacoes', 'mapa'].forEach(id => {
                     document.getElementById(`view-${id}`).classList.add('hidden');
                     document.getElementById(`tab-${id}`).className = 'tab-inactive pb-3 px-1 transition whitespace-nowrap';
                 });
@@ -594,11 +721,13 @@
                 if (tabId === 'dashboard') this.renderDashboard();
                 if (tabId === 'cadastro') this.renderCadastro();
                 if (tabId === 'controle') this.renderControle();
+                if (tabId === 'aprovacoes') this.renderAprovacoes();
                 if (tabId === 'mapa') this.renderMapa();
             },
 
             calcPeriodos(dataAdmissaoStr) {
-                const adm = new Date(dataAdmissaoStr + 'T12:00:00');
+                let adm = new Date(dataAdmissaoStr + 'T12:00:00');
+                if (Number.isNaN(adm.getTime())) adm = new Date(HOJE);
                 let anosDeEmpresa = Math.floor((HOJE - adm) / (1000 * 60 * 60 * 24 * 365.25));
                 if (anosDeEmpresa < 0) anosDeEmpresa = 0; 
                 
@@ -624,6 +753,43 @@
                 return 'Concluída';
             },
 
+            getApprovalStatus(ferias) {
+                return ferias.status || 'APROVADA';
+            },
+
+            isActiveVacation(ferias) {
+                return this.getApprovalStatus(ferias) !== 'RECUSADA';
+            },
+
+            periodsOverlap(inicioA, fimA, inicioB, fimB) {
+                return inicioA <= fimB && inicioB <= fimA;
+            },
+
+            getVacationConflicts(ferias) {
+                const employee = DB.funcionarios.find(func => String(func.id) === String(ferias.funcId));
+                if (!employee || !this.isActiveVacation(ferias)) return { sameEmployee: [], sameSector: [] };
+
+                const overlapping = DB.ferias.filter(other => {
+                    if (String(other.id) === String(ferias.id) || !this.isActiveVacation(other)) return false;
+                    return this.periodsOverlap(ferias.inicio, ferias.fim, other.inicio, other.fim);
+                });
+
+                const sameEmployee = overlapping.filter(other => String(other.funcId) === String(ferias.funcId));
+                const sameSector = overlapping.filter(other => {
+                    const otherEmployee = DB.funcionarios.find(func => String(func.id) === String(other.funcId));
+                    return otherEmployee && otherEmployee.setor === employee.setor && String(other.funcId) !== String(ferias.funcId);
+                });
+
+                return { sameEmployee, sameSector };
+            },
+
+            getConflictLabel(ferias) {
+                const conflicts = this.getVacationConflicts(ferias);
+                if (conflicts.sameEmployee.length > 0) return 'Período sobreposto para o mesmo funcionário';
+                if (conflicts.sameSector.length > 0) return `${conflicts.sameSector.length} coincidência(s) no mesmo turno/setor`;
+                return '';
+            },
+
             showToast(msg) {
                 const toast = document.getElementById('toast');
                 document.getElementById('toast-msg').innerText = msg;
@@ -638,16 +804,17 @@
 
             renderDashboard() {
                 const ativos = DB.funcionarios.filter(f => f.status === 'Ativo');
+                const feriasAtivas = DB.ferias.filter(f => this.isActiveVacation(f));
                 document.getElementById('kpi-total').innerText = ativos.length;
 
                 let emFerias = 0, programadas = 0;
                 let thirtyDaysFromNow = new Date(HOJE);
                 thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
-                DB.ferias.forEach(f => {
+                feriasAtivas.forEach(f => {
                     const dtIni = new Date(f.inicio + 'T12:00:00');
                     const dtFim = new Date(f.fim + 'T12:00:00');
-                    if (HOJE >= dtIni && HOJE <= dtFim) emFerias++;
+                    if (this.getApprovalStatus(f) === 'APROVADA' && HOJE >= dtIni && HOJE <= dtFim) emFerias++;
                     if (dtIni > HOJE && dtIni <= thirtyDaysFromNow) programadas++;
                 });
 
@@ -657,13 +824,13 @@
                 let vencidasCount = 0;
                 ativos.forEach(func => {
                     const p = this.calcPeriodos(func.admissao);
-                    const gozados = DB.ferias.filter(f => f.funcId === func.id).reduce((acc, f) => acc + f.dias, 0);
+                    const gozados = feriasAtivas.filter(f => String(f.funcId) === String(func.id)).reduce((acc, f) => acc + f.dias, 0);
                     if (p.vencida && gozados < 30) vencidasCount++; 
                 });
                 document.getElementById('kpi-vencidas').innerText = vencidasCount;
 
                 const mesesCount = new Array(12).fill(0);
-                DB.ferias.forEach(f => {
+                feriasAtivas.forEach(f => {
                     if(f.inicio.startsWith(ANO_VIGENTE.toString())) {
                         const mes = parseInt(f.inicio.split('-')[1]) - 1;
                         mesesCount[mes]++;
@@ -702,6 +869,9 @@
                     },
                     options: { maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right', labels: { boxWidth: 12 } } } }
                 });
+
+                const pendingCount = DB.ferias.filter(f => this.getApprovalStatus(f) === 'SOLICITADA').length;
+                document.getElementById('badge-aprovacoes').innerText = pendingCount;
             },
 
             renderCadastro() {
@@ -741,17 +911,28 @@
                 const cargo = document.getElementById('mf-cargo').value;
                 const adm = document.getElementById('mf-adm').value;
                 const setor = document.getElementById('mf-setor').value;
+                const employee = { id: mat, mat, nome, cargo, admissao: adm, setor, status: 'Ativo' };
 
-                DB.funcionarios.push({
-                    id: Date.now(), mat, nome, cargo, admissao: adm, setor, status: 'Ativo'
-                });
-                
+                if (APP_CONTEXT.parentConnected) {
+                    this.pendingEmployee = employee;
+                    window.parent.postMessage({ type: 'CSVA_EMPLOYEE_CREATE', employee }, '*');
+                    this.showToast('Enviando funcionário para o cadastro principal...');
+                    return;
+                }
+
+                DB.funcionarios.push(employee);
                 this.salvarDB();
+                this.finishEmployeeCreate('Funcionário cadastrado!');
+            },
+
+            finishEmployeeCreate(message) {
+                this.pendingEmployee = null;
                 this.closeModal('modal-func');
                 document.getElementById('form-func').reset();
-                this.showToast('Funcionário cadastrado!');
+                this.showToast(message);
                 this.renderCadastro();
                 this.renderControleOptions();
+                this.renderFilterOptions();
             },
 
             renderControleOptions() {
@@ -779,7 +960,7 @@
                 document.getElementById('ctrl-limite').value = p.concFim.toLocaleDateString('pt-BR');
 
                 // Ignora os dias do período que está sendo editado no momento (se houver) para o saldo fazer sentido
-                const feriasAtuais = DB.ferias.filter(f => f.funcId == id && f.id !== this.editingFeriasId);
+                const feriasAtuais = DB.ferias.filter(f => String(f.funcId) === String(id) && f.id !== this.editingFeriasId && this.isActiveVacation(f));
                 const gozados = feriasAtuais.reduce((acc, val) => acc + val.dias, 0);
                 
                 document.getElementById('ctrl-gozados').value = gozados;
@@ -798,7 +979,7 @@
             },
 
             editarFerias(id) {
-                const ferias = DB.ferias.find(f => f.id === id);
+                const ferias = DB.ferias.find(f => String(f.id) === String(id));
                 if (!ferias) return;
 
                 this.editingFeriasId = id;
@@ -813,7 +994,7 @@
 
                 // Mudar UI do formulário para modo edição
                 const btnSubmit = document.getElementById('btn-submit-ferias');
-                btnSubmit.innerText = 'Atualizar Período';
+                btnSubmit.innerText = 'Atualizar e Reenviar';
                 btnSubmit.classList.replace('bg-brand-blue', 'bg-status-yellow');
                 btnSubmit.classList.replace('hover:bg-brand-dark', 'hover:bg-yellow-600');
                 document.getElementById('btn-cancel-edit').classList.remove('hidden');
@@ -830,7 +1011,7 @@
                 
                 // Restaurar UI original do botão
                 const btnSubmit = document.getElementById('btn-submit-ferias');
-                btnSubmit.innerText = 'Registrar Período';
+                btnSubmit.innerText = 'Enviar para Aprovação';
                 btnSubmit.classList.replace('bg-status-yellow', 'bg-brand-blue');
                 btnSubmit.classList.replace('hover:bg-yellow-600', 'hover:bg-brand-dark');
                 document.getElementById('btn-cancel-edit').classList.add('hidden');
@@ -838,40 +1019,188 @@
 
             salvarFerias(e) {
                 e.preventDefault();
-                const funcId = parseInt(document.getElementById('ctrl-func').value);
+                const funcId = String(document.getElementById('ctrl-func').value);
                 const inicio = document.getElementById('ctrl-inicio').value;
                 const fim = document.getElementById('ctrl-fim').value;
                 const dias = parseInt(document.getElementById('ctrl-dias').value);
+                const employee = DB.funcionarios.find(func => String(func.id) === funcId);
+                const candidateId = this.editingFeriasId || Date.now();
+                const candidate = { id: candidateId, funcId, inicio, fim, dias, status: 'SOLICITADA' };
+                const remainingDays = parseInt(document.getElementById('ctrl-saldo').value) || 0;
+                const wasEditing = Boolean(this.editingFeriasId);
+
+                if (!employee || !inicio || !fim || !dias) return;
+                if (dias > remainingDays) {
+                    alert(`O período possui ${dias} dias, mas o saldo disponível é de ${remainingDays} dias.`);
+                    return;
+                }
+
+                const conflicts = this.getVacationConflicts(candidate);
+                if (conflicts.sameEmployee.length > 0) {
+                    alert('Conflito detectado: este funcionário já possui férias registradas em parte deste período.');
+                    return;
+                }
+                if (conflicts.sameSector.length > 0) {
+                    const proceed = confirm(`Atenção: existem ${conflicts.sameSector.length} funcionário(s) do mesmo turno/setor com férias coincidentes. Deseja enviar a solicitação mesmo assim?`);
+                    if (!proceed) return;
+                }
 
                 if (this.editingFeriasId) {
-                    // Atualizar registro existente
-                    const index = DB.ferias.findIndex(f => f.id === this.editingFeriasId);
+                    const index = DB.ferias.findIndex(f => String(f.id) === String(this.editingFeriasId));
                     if (index !== -1) {
-                        DB.ferias[index] = { ...DB.ferias[index], funcId, inicio, fim, dias };
-                        this.showToast('Período de férias atualizado com sucesso!');
+                        DB.ferias[index] = {
+                            ...DB.ferias[index],
+                            ...candidate,
+                            updatedAt: new Date().toISOString(),
+                            status: 'SOLICITADA'
+                        };
+                        this.showToast('Período atualizado e reenviado para aprovação!');
                     }
-                    this.cancelarEdicaoFerias(); // Limpa o estado e volta a tela ao normal
+                    this.cancelarEdicaoFerias();
                 } else {
-                    // Inserir novo registro
-                    DB.ferias.push({ id: Date.now(), funcId, inicio, fim, dias });
-                    this.showToast('Período registrado na Planilha de Controle!');
+                    DB.ferias.push({
+                        ...candidate,
+                        createdAt: new Date().toISOString(),
+                        requestedAt: new Date().toISOString()
+                    });
+                    this.showToast('Solicitação enviada para aprovação!');
                     document.getElementById('ctrl-inicio').value = '';
                     document.getElementById('ctrl-dias').value = '';
                     document.getElementById('ctrl-fim').value = '';
                 }
-                
-                this.salvarDB(); 
+                 
+                this.salvarDB({
+                    type: wasEditing ? 'EDITOU_FÉRIAS_MAPA' : 'SOLICITOU_FÉRIAS_MAPA',
+                    details: `${employee.nome}: ${new Date(inicio + 'T12:00:00').toLocaleDateString('pt-BR')} a ${new Date(fim + 'T12:00:00').toLocaleDateString('pt-BR')} (${dias} dias)`
+                });
                 this.calcControleFields(); 
                 this.renderControle();
+                this.renderAprovacoes();
             },
 
             excluirFerias(idFerias) {
                 if(confirm("Tem certeza que deseja excluir este período de férias?")) {
-                    DB.ferias = DB.ferias.filter(f => f.id !== idFerias);
-                    this.salvarDB();
+                    const vacation = DB.ferias.find(f => String(f.id) === String(idFerias));
+                    const employee = DB.funcionarios.find(func => String(func.id) === String(vacation?.funcId));
+                    DB.ferias = DB.ferias.filter(f => String(f.id) !== String(idFerias));
+                    this.salvarDB({
+                        type: 'EXCLUIU_FÉRIAS_MAPA',
+                        details: `Excluiu o período de férias de ${employee?.nome || vacation?.funcId || 'funcionário'}`
+                    });
                     this.calcControleFields();
                     this.renderControle();
+                    this.renderAprovacoes();
                     this.showToast('Período excluído com sucesso!');
+                }
+            },
+
+            aprovarFerias(idFerias) {
+                if (!APP_CONTEXT.isAdmin) {
+                    this.showToast('Somente o administrador pode aprovar férias.');
+                    return;
+                }
+                const vacation = DB.ferias.find(f => String(f.id) === String(idFerias));
+                if (!vacation) return;
+
+                const conflicts = this.getVacationConflicts(vacation);
+                if (conflicts.sameEmployee.length > 0) {
+                    alert('Não é possível aprovar: há outro período sobreposto para este funcionário.');
+                    return;
+                }
+                if (conflicts.sameSector.length > 0) {
+                    const proceed = confirm(`Este período coincide com ${conflicts.sameSector.length} funcionário(s) do mesmo turno/setor. Deseja aprovar mesmo assim?`);
+                    if (!proceed) return;
+                }
+
+                vacation.status = 'APROVADA';
+                vacation.approvedAt = new Date().toISOString();
+                vacation.rejectedAt = null;
+                const employee = DB.funcionarios.find(func => String(func.id) === String(vacation.funcId));
+                this.salvarDB({
+                    type: 'APROVOU_FÉRIAS_MAPA',
+                    details: `Aprovou ${vacation.dias} dias de férias para ${employee?.nome || vacation.funcId}`
+                });
+                this.renderAll();
+                this.showToast('Férias aprovadas e lançadas nas ocorrências diárias!');
+            },
+
+            recusarFerias(idFerias) {
+                if (!APP_CONTEXT.isAdmin) {
+                    this.showToast('Somente o administrador pode recusar férias.');
+                    return;
+                }
+                const vacation = DB.ferias.find(f => String(f.id) === String(idFerias));
+                if (!vacation) return;
+                const employee = DB.funcionarios.find(func => String(func.id) === String(vacation.funcId));
+                const confirmed = confirm(`Recusar a solicitação de férias de ${employee?.nome || 'este funcionário'}?`);
+                if (!confirmed) return;
+
+                vacation.status = 'RECUSADA';
+                vacation.rejectedAt = new Date().toISOString();
+                vacation.approvedAt = null;
+                this.salvarDB({
+                    type: 'RECUSOU_FÉRIAS_MAPA',
+                    details: `Recusou ${vacation.dias} dias de férias para ${employee?.nome || vacation.funcId}`
+                });
+                this.renderAll();
+                this.showToast('Solicitação recusada.');
+            },
+
+            renderAprovacoes() {
+                const tbody = document.getElementById('tbody-aprovacoes');
+                if (!tbody) return;
+                const search = (document.getElementById('approval-filter-search')?.value || '').toLowerCase();
+                const setor = document.getElementById('approval-filter-setor')?.value || '';
+                const ordered = [...DB.ferias].sort((a, b) => {
+                    const weight = { SOLICITADA: 0, PLANEJADA: 1, APROVADA: 2, RECUSADA: 3 };
+                    return (weight[this.getApprovalStatus(a)] ?? 4) - (weight[this.getApprovalStatus(b)] ?? 4)
+                        || new Date(b.createdAt || b.inicio) - new Date(a.createdAt || a.inicio);
+                });
+
+                const counts = {
+                    pending: DB.ferias.filter(f => this.getApprovalStatus(f) === 'SOLICITADA').length,
+                    approved: DB.ferias.filter(f => this.getApprovalStatus(f) === 'APROVADA').length,
+                    rejected: DB.ferias.filter(f => this.getApprovalStatus(f) === 'RECUSADA').length,
+                    conflicts: DB.ferias.filter(f => this.getConflictLabel(f)).length
+                };
+                document.getElementById('approval-count-pending').innerText = counts.pending;
+                document.getElementById('approval-count-approved').innerText = counts.approved;
+                document.getElementById('approval-count-rejected').innerText = counts.rejected;
+                document.getElementById('approval-count-conflicts').innerText = counts.conflicts;
+                document.getElementById('badge-aprovacoes').innerText = counts.pending;
+                document.getElementById('approval-admin-note').classList.toggle('hidden', APP_CONTEXT.isAdmin);
+
+                tbody.innerHTML = '';
+                ordered.forEach(vacation => {
+                    const employee = DB.funcionarios.find(func => String(func.id) === String(vacation.funcId));
+                    if (!employee) return;
+                    if (search && !employee.nome.toLowerCase().includes(search) && !String(employee.mat).toLowerCase().includes(search)) return;
+                    if (setor && employee.setor !== setor) return;
+
+                    const approvalStatus = this.getApprovalStatus(vacation);
+                    const approvalClass = APPROVAL_CLASSES[approvalStatus] || APPROVAL_CLASSES.PLANEJADA;
+                    const conflictLabel = this.getConflictLabel(vacation);
+                    const safeId = JSON.stringify(String(vacation.id));
+                    const decisionButtons = APP_CONTEXT.isAdmin && approvalStatus !== 'APROVADA' ? `
+                        <button onclick='app.aprovarFerias(${safeId})' class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold"><i class="fa-solid fa-check mr-1"></i>Aprovar</button>
+                        ${approvalStatus !== 'RECUSADA' ? `<button onclick='app.recusarFerias(${safeId})' class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded text-xs font-bold"><i class="fa-solid fa-xmark mr-1"></i>Recusar</button>` : ''}
+                    ` : '<span class="text-xs text-gray-400">Sem ações pendentes</span>';
+
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3"><p class="font-bold text-gray-800">${employee.nome}</p><p class="text-xs text-brand-blue font-semibold">MAT: ${employee.mat}</p></td>
+                            <td class="px-4 py-3"><p class="font-semibold text-gray-700">${employee.setor}</p><p class="text-xs text-gray-500">${employee.cargo || '-'}</p></td>
+                            <td class="px-4 py-3 text-center text-xs font-medium">${new Date(vacation.inicio + 'T12:00:00').toLocaleDateString('pt-BR')}<br>a ${new Date(vacation.fim + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                            <td class="px-4 py-3 text-center font-bold text-brand-blue">${vacation.dias}</td>
+                            <td class="px-4 py-3 text-center">${conflictLabel ? `<span class="inline-flex items-center gap-1 text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-1 rounded" title="${conflictLabel}"><i class="fa-solid fa-triangle-exclamation"></i>${conflictLabel}</span>` : '<span class="text-emerald-600 text-xs font-bold"><i class="fa-solid fa-circle-check mr-1"></i>Sem conflitos</span>'}</td>
+                            <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border ${approvalClass}">${APPROVAL_LABELS[approvalStatus] || approvalStatus}</span></td>
+                            <td class="px-4 py-3 text-right print-hidden"><div class="flex justify-end gap-2">${decisionButtons}</div></td>
+                        </tr>
+                    `;
+                });
+
+                if (!tbody.innerHTML) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">Nenhuma solicitação corresponde aos filtros.</td></tr>';
                 }
             },
 
@@ -887,6 +1216,66 @@
                 this.showToast('Backup (.json) gerado com sucesso!');
             },
 
+            exportarCSV() {
+                const activeTab = document.querySelector('.tab-active')?.id?.replace('tab-', '') || '';
+                const isMapTab = activeTab === 'mapa';
+                const isApprovalTab = activeTab === 'aprovacoes';
+                const filterNomeRaw = isMapTab
+                    ? document.getElementById('map-filter-nome')?.value
+                    : isApprovalTab ? document.getElementById('approval-filter-search')?.value : ''
+                ;
+                const filterNome = (filterNomeRaw || '').toLowerCase();
+                const filterSetor = (isMapTab
+                    ? document.getElementById('map-filter-setor')?.value
+                    : isApprovalTab ? document.getElementById('approval-filter-setor')?.value : ''
+                ) || '';
+                const filterCargo = isMapTab ? (document.getElementById('map-filter-cargo')?.value || '') : '';
+                const filterWorkflow = isMapTab ? (document.getElementById('map-filter-status-ferias')?.value || '') : '';
+                const filterMonth = isMapTab ? (document.getElementById('map-filter-mes')?.value || '') : '';
+
+                const escapeCell = (value) => {
+                    let text = String(value ?? '');
+                    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+                    return `"${text.replace(/"/g, '""')}"`;
+                };
+
+                const rows = DB.ferias.map(vacation => {
+                    const employee = DB.funcionarios.find(func => String(func.id) === String(vacation.funcId));
+                    if (!employee) return null;
+                    if (filterNome && !employee.nome.toLowerCase().includes(filterNome) && !String(employee.mat).toLowerCase().includes(filterNome)) return null;
+                    if (filterSetor && employee.setor !== filterSetor) return null;
+                    if (filterCargo && employee.cargo !== filterCargo) return null;
+                    if (filterWorkflow && this.getApprovalStatus(vacation) !== filterWorkflow) return null;
+                    if (filterMonth && parseInt(vacation.inicio.split('-')[1]) !== parseInt(filterMonth)) return null;
+
+                    return [
+                        employee.mat,
+                        employee.nome,
+                        employee.cargo || '',
+                        employee.setor || '',
+                        vacation.inicio,
+                        vacation.fim,
+                        vacation.dias,
+                        APPROVAL_LABELS[this.getApprovalStatus(vacation)] || this.getApprovalStatus(vacation),
+                        this.getStatusFerias(vacation.inicio, vacation.fim),
+                        this.getConflictLabel(vacation) || 'Sem conflitos'
+                    ];
+                }).filter(Boolean);
+
+                const headers = ['Matrícula', 'Funcionário', 'Cargo / Função', 'Turno / Setor', 'Início', 'Fim', 'Dias', 'Aprovação', 'Situação do Período', 'Conflitos'];
+                const csv = [headers, ...rows].map(row => row.map(escapeCell).join(';')).join('\n');
+                const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `relatorio_mapa_ferias_${ANO_VIGENTE}_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                this.showToast(`Relatório Excel gerado com ${rows.length} período(s).`);
+            },
+
             importarJSON(event) {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -896,8 +1285,19 @@
                     try {
                         const importedData = JSON.parse(e.target.result);
                         if (importedData.funcionarios && importedData.ferias) {
-                            DB = importedData;
-                            this.salvarDB(); 
+                            if (APP_CONTEXT.parentConnected) {
+                                DB.ferias = importedData.ferias.map(ferias => ({
+                                    ...ferias,
+                                    funcId: String(ferias.funcId),
+                                    status: ferias.status || 'APROVADA'
+                                }));
+                            } else {
+                                DB = importedData;
+                            }
+                            this.salvarDB({
+                                type: 'IMPORTOU_MAPA_FÉRIAS',
+                                details: `Importou backup com ${DB.ferias.length} período(s) de férias`
+                            });
                             this.init();
                             const activeTabId = document.querySelector('.tab-active').id.replace('tab-', '');
                             this.switchTab(activeTabId);
@@ -919,12 +1319,13 @@
                 // Pegando os valores dos novos filtros
                 const searchName = (document.getElementById('ctrl-filter-nome')?.value || '').toLowerCase();
                 const filterStatus = document.getElementById('ctrl-filter-status')?.value || '';
+                const filterApproval = document.getElementById('ctrl-filter-aprovacao')?.value || '';
 
                 tbody.innerHTML = '';
                 
                 // Ordenar férias pelas mais recentes inseridas (últimas no topo)
                 [...DB.ferias].reverse().forEach(f => {
-                    const func = DB.funcionarios.find(x => x.id === f.funcId);
+                    const func = DB.funcionarios.find(x => String(x.id) === String(f.funcId));
                     if(!func) return;
                     
                     // Aplicação do Filtro de Nome
@@ -932,12 +1333,17 @@
                     
                     const p = this.calcPeriodos(func.admissao);
                     const status = this.getStatusFerias(f.inicio, f.fim);
+                    const approvalStatus = this.getApprovalStatus(f);
                     
                     // Aplicação do Filtro de Status
                     if (filterStatus && status !== filterStatus) return;
+                    if (filterApproval && approvalStatus !== filterApproval) return;
 
                     let statusColor = status === 'Gozando' ? 'text-status-green bg-green-50' : 
                                      (status === 'Programada' ? 'text-status-yellow bg-yellow-50' : 'text-gray-500 bg-gray-50');
+                    const approvalColor = APPROVAL_CLASSES[approvalStatus] || APPROVAL_CLASSES.PLANEJADA;
+                    const conflictLabel = this.getConflictLabel(f);
+                    const safeId = JSON.stringify(String(f.id));
 
                     tbody.innerHTML += `
                         <tr class="hover:bg-gray-50">
@@ -946,12 +1352,13 @@
                             <td class="px-4 py-2 text-xs font-semibold ${p.vencida ? 'text-status-red' : ''}">${p.concFim.toLocaleDateString('pt-BR')}</td>
                             <td class="px-4 py-2 text-center text-xs">${new Date(f.inicio+'T12:00:00').toLocaleDateString('pt-BR')} - ${new Date(f.fim+'T12:00:00').toLocaleDateString('pt-BR')}</td>
                             <td class="px-4 py-2 text-center font-bold text-brand-blue">${f.dias}</td>
-                            <td class="px-4 py-2 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border border-current ${statusColor}">${status}</span></td>
+                            <td class="px-4 py-2 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border border-current ${statusColor}">${status}</span>${conflictLabel ? `<div class="text-[10px] text-purple-700 font-bold mt-1" title="${conflictLabel}"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Conflito</div>` : ''}</td>
+                            <td class="px-4 py-2 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border ${approvalColor}">${APPROVAL_LABELS[approvalStatus] || approvalStatus}</span></td>
                             <td class="px-4 py-2 text-right print-hidden flex justify-end gap-3">
-                                <button class="text-brand-blue hover:text-blue-700 transition" onclick="app.editarFerias(${f.id})" title="Editar Período">
+                                <button class="text-brand-blue hover:text-blue-700 transition" onclick='app.editarFerias(${safeId})' title="Editar Período">
                                     <i class="fa-solid fa-pen"></i>
                                 </button>
-                                <button class="text-status-red hover:text-red-700 transition" onclick="app.excluirFerias(${f.id})" title="Excluir Período">
+                                <button class="text-status-red hover:text-red-700 transition" onclick='app.excluirFerias(${safeId})' title="Excluir Período">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>
                             </td>
@@ -963,7 +1370,11 @@
             renderMapa() {
                 const grid = document.getElementById('map-grid');
                 const filterSetor = document.getElementById('map-filter-setor').value;
-                const filterNome = (document.getElementById('map-filter-nome')?.value || '').toLowerCase(); // Novo filtro
+                const filterNome = (document.getElementById('map-filter-nome')?.value || '').toLowerCase();
+                const filterCargo = document.getElementById('map-filter-cargo')?.value || '';
+                const filterEmployeeStatus = document.getElementById('map-filter-status-func')?.value || '';
+                const filterVacationStatus = document.getElementById('map-filter-status-ferias')?.value || '';
+                const filterMonth = document.getElementById('map-filter-mes')?.value || '';
                 const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                 
                 let html = `
@@ -973,18 +1384,27 @@
                 `;
                 meses.forEach(m => html += `<div class="sheet-cell sheet-header">${m}</div>`);
 
-                DB.funcionarios.forEach(func => {
+                [...DB.funcionarios].sort((a, b) => a.nome.localeCompare(b.nome)).forEach(func => {
                     if (filterSetor && func.setor !== filterSetor) return;
-                    if (filterNome && !func.nome.toLowerCase().includes(filterNome)) return; // Aplicação do filtro
-                    
-                    const feriasFunc = DB.ferias.filter(f => f.funcId === func.id && f.inicio.startsWith(ANO_VIGENTE.toString()));
+                    if (filterCargo && func.cargo !== filterCargo) return;
+                    if (filterEmployeeStatus && func.status !== filterEmployeeStatus) return;
+                    if (filterNome && !func.nome.toLowerCase().includes(filterNome) && !String(func.mat).toLowerCase().includes(filterNome)) return;
+
+                    const allEmployeeVacations = DB.ferias.filter(f => String(f.funcId) === String(func.id) && f.inicio.startsWith(ANO_VIGENTE.toString()));
+                    const feriasFunc = filterVacationStatus
+                        ? allEmployeeVacations.filter(f => this.getApprovalStatus(f) === filterVacationStatus)
+                        : allEmployeeVacations.filter(f => this.isActiveVacation(f));
+                    if (filterVacationStatus && feriasFunc.length === 0) return;
+                    if (filterMonth && !feriasFunc.some(f => parseInt(f.inicio.split('-')[1]) === parseInt(filterMonth))) return;
+
                     const p = this.calcPeriodos(func.admissao);
-                    const saldo = 30 - feriasFunc.reduce((acc, val) => acc + val.dias, 0);
-                    
+                    const saldo = 30 - allEmployeeVacations.filter(f => this.isActiveVacation(f)).reduce((acc, val) => acc + val.dias, 0);
+                     
                     let alertaVencida = (p.vencida && saldo > 0) ? `<i class="fa-solid fa-circle-exclamation text-status-red ml-2" title="Férias Vencidas!"></i>` : '';
+                    const safeFuncId = JSON.stringify(String(func.id));
 
                     html += `
-                        <div class="sheet-cell text-left text-gray-800 ${func.status !== 'Ativo' ? 'opacity-50 line-through' : ''} cursor-pointer hover:bg-gray-50 transition" onclick="app.showFeriasDetails(${func.id})" title="Clique para ver detalhes do funcionário">
+                        <div class="sheet-cell text-left text-gray-800 ${func.status !== 'Ativo' ? 'opacity-50 line-through' : ''} cursor-pointer hover:bg-gray-50 transition" onclick='app.showFeriasDetails(${safeFuncId})' title="Clique para ver detalhes do funcionário">
                             <span class="font-semibold text-xs leading-tight">${func.nome}</span> ${alertaVencida}
                         </div>
                         <div class="sheet-cell flex-col items-center justify-center text-[10px] text-gray-500 text-center">
@@ -996,39 +1416,76 @@
                     for(let i=1; i<=12; i++) {
                         let cellContent = '';
                         let cellClass = '';
-                        
+                        let cellTitle = '';
+                        if (filterMonth && i !== parseInt(filterMonth)) {
+                            html += '<div class="sheet-cell bg-gray-50/60 text-gray-300">-</div>';
+                            continue;
+                        }
+                         
                         feriasFunc.forEach(f => {
                             const mesIni = parseInt(f.inicio.split('-')[1]);
                             if(mesIni === i) {
                                 const st = this.getStatusFerias(f.inicio, f.fim);
-                                // Adicionado cursor-pointer e hover para indicar que é clicável
-                                if (st === 'Programada') cellClass = 'bg-status-yellow text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                const approvalStatus = this.getApprovalStatus(f);
+                                if (approvalStatus === 'SOLICITADA') cellClass = 'bg-blue-500 text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                else if (approvalStatus === 'PLANEJADA') cellClass = 'bg-slate-500 text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                else if (approvalStatus === 'RECUSADA') cellClass = 'bg-red-100 text-red-600 font-bold cursor-pointer';
+                                else if (st === 'Programada') cellClass = 'bg-status-yellow text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
                                 else cellClass = 'bg-status-green text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
+                                const conflictLabel = this.getConflictLabel(f);
+                                if (conflictLabel) cellClass += ' ring-2 ring-purple-500 ring-inset';
                                 cellContent = `${f.dias}d`;
+                                cellTitle = `${APPROVAL_LABELS[approvalStatus] || approvalStatus}${conflictLabel ? ` — ${conflictLabel}` : ''}`;
                             }
                         });
 
-                        // Se tiver conteúdo (férias no mês), permite clicar para abrir o histórico
-                        html += `<div class="sheet-cell ${cellClass}" ${cellContent ? `onclick="app.showFeriasDetails(${func.id})"` : ''} title="${cellContent ? 'Ver detalhes das férias' : ''}">${cellContent}</div>`;
+                        html += `<div class="sheet-cell ${cellClass}" ${cellContent ? `onclick='app.showFeriasDetails(${safeFuncId})'` : ''} title="${cellContent ? cellTitle : ''}">${cellContent}</div>`;
                     }
                 });
 
                 grid.innerHTML = html;
             },
 
-            init() {
+            renderFilterOptions() {
+                const setores = Array.from(new Set(DB.funcionarios.map(func => func.setor || 'Geral'))).sort();
+                const cargos = Array.from(new Set(DB.funcionarios.map(func => func.cargo || 'Sem cargo'))).sort();
+                const populate = (id, label, values) => {
+                    const select = document.getElementById(id);
+                    if (!select) return;
+                    const previousValue = select.value;
+                    select.innerHTML = `<option value="">${label}</option>` + values.map(value => `<option value="${value}">${value}</option>`).join('');
+                    if (values.includes(previousValue)) select.value = previousValue;
+                };
+
+                populate('map-filter-setor', 'Todos os turnos/setores', setores);
+                populate('map-filter-cargo', 'Todos os cargos', cargos);
+                populate('approval-filter-setor', 'Todos os turnos/setores', setores);
+                populate('cad-filter-setor', 'Todos os Setores', setores);
+            },
+
+            renderAll() {
                 this.renderControleOptions();
-                this.switchTab('mapa'); 
+                this.renderFilterOptions();
+                this.renderDashboard();
+                this.renderCadastro();
+                this.renderControle();
+                this.renderAprovacoes();
+                this.renderMapa();
+            },
+
+            init() {
+                this.renderAll();
+                this.switchTab('mapa');
             },
 
             // NOVA FUNÇÃO: Mostrar histórico do funcionário ao clicar no mapa
             showFeriasDetails(funcId) {
-                const func = DB.funcionarios.find(f => f.id === funcId);
+                const func = DB.funcionarios.find(f => String(f.id) === String(funcId));
                 if (!func) return;
 
                 const p = this.calcPeriodos(func.admissao);
-                const ferias = DB.ferias.filter(f => f.funcId === funcId);
-                const gozados = ferias.reduce((acc, val) => acc + val.dias, 0);
+                const ferias = DB.ferias.filter(f => String(f.funcId) === String(funcId));
+                const gozados = ferias.filter(f => this.isActiveVacation(f)).reduce((acc, val) => acc + val.dias, 0);
                 const saldo = 30 - gozados;
 
                 document.getElementById('md-func-info').innerHTML = `
@@ -1066,6 +1523,7 @@
                     // Ordena da mais recente para a mais antiga
                     [...ferias].sort((a,b) => new Date(b.inicio) - new Date(a.inicio)).forEach(f => {
                         const status = this.getStatusFerias(f.inicio, f.fim);
+                        const approvalStatus = this.getApprovalStatus(f);
                         let statusColor = status === 'Gozando' ? 'text-status-green bg-green-50 border-status-green' : 
                                          (status === 'Programada' ? 'text-status-yellow bg-yellow-50 border-status-yellow' : 'text-gray-500 bg-gray-50 border-gray-300');
                         
@@ -1074,7 +1532,7 @@
                                 <td class="px-4 py-3 font-medium text-gray-800">${new Date(f.inicio + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
                                 <td class="px-4 py-3 font-medium text-gray-800">${new Date(f.fim + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
                                 <td class="px-4 py-3 text-center font-bold text-brand-blue">${f.dias}</td>
-                                <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border ${statusColor}">${status}</span></td>
+                                <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border ${statusColor}">${status}</span><div class="mt-1 text-[10px] font-bold ${approvalStatus === 'APROVADA' ? 'text-emerald-600' : approvalStatus === 'RECUSADA' ? 'text-red-600' : 'text-amber-600'}">${APPROVAL_LABELS[approvalStatus] || approvalStatus}</div></td>
                             </tr>
                         `;
                     });
@@ -1084,7 +1542,69 @@
             }
         };
 
+        window.addEventListener('message', (event) => {
+            if (event.source !== window.parent) return;
+            const message = event.data || {};
+
+            if (message.type === 'CSVA_MAP_INIT') {
+                const wasConnected = APP_CONTEXT.parentConnected;
+                APP_CONTEXT.parentConnected = true;
+                APP_CONTEXT.isAdmin = Boolean(message.isAdmin);
+                const legacyEmployeeIds = new Map(DB.funcionarios.map(employee => [String(employee.id), String(employee.mat || employee.id)]));
+
+                if (Array.isArray(message.employees)) {
+                    DB.funcionarios = message.employees.map(employee => ({
+                        ...employee,
+                        id: String(employee.id),
+                        mat: String(employee.mat || employee.id)
+                    }));
+                }
+
+                const incomingVacations = Array.isArray(message.vacations)
+                    ? message.vacations.map(vacation => ({
+                        ...vacation,
+                        funcId: String(vacation.funcId),
+                        status: vacation.status || 'APROVADA'
+                    }))
+                    : [];
+                const migrationDone = localStorage.getItem('mapaFeriasMigradoPrincipal_v1') === '1';
+
+                if (!wasConnected && !migrationDone && incomingVacations.length === 0 && DB.ferias.length > 0) {
+                    DB.ferias = DB.ferias.map(vacation => ({
+                        ...vacation,
+                        funcId: legacyEmployeeIds.get(String(vacation.funcId)) || String(vacation.funcId),
+                        status: vacation.status || 'APROVADA'
+                    }));
+                    localStorage.setItem('mapaFeriasMigradoPrincipal_v1', '1');
+                    app.salvarDB({
+                        type: 'MIGROU_MAPA_FÉRIAS',
+                        details: `Migrou ${DB.ferias.length} período(s) locais para o sistema principal`
+                    });
+                } else {
+                    DB.ferias = incomingVacations;
+                    localStorage.setItem('mapaFeriasMigradoPrincipal_v1', '1');
+                    localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
+                }
+
+                const activeTab = document.querySelector('.tab-active')?.id?.replace('tab-', '') || 'mapa';
+                app.renderAll();
+                app.switchTab(activeTab);
+            }
+
+            if (message.type === 'CSVA_EMPLOYEE_CREATE_RESULT') {
+                if (message.success) {
+                    app.finishEmployeeCreate(message.message || 'Funcionário incluído no cadastro principal.');
+                } else {
+                    app.pendingEmployee = null;
+                    alert(message.message || 'Não foi possível cadastrar o funcionário.');
+                }
+            }
+        });
+
         app.init();
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'CSVA_MAP_READY' }, '*');
+        }
     </script>
 </body>
 </html>
