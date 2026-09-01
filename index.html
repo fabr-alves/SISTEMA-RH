@@ -848,7 +848,8 @@
               admissionDate: candidate.admissao || '-',
               supervisor: 'A Definir',
               contact: candidate.contato || '-',
-              status: 'Ativo'
+              status: 'Ativo',
+              inactiveDate: null
             };
 
             setEmployees(previousEmployees => [...previousEmployees, newEmployee]);
@@ -1804,7 +1805,8 @@
                 admissionDate: newAdmissionDate || '-', 
                 supervisor: 'A Definir', 
                 contact: newContact || '-', // Salvando o contato
-                status: 'Ativo' 
+                status: 'Ativo',
+                inactiveDate: null
             };
             setEmployees([...employees, newEmp]);
             logAction('CADASTRAR_FUNCIONÁRIO', `Cadastrou o funcionário ${newName} (Matrícula: ${newMatricula})`);
@@ -1870,7 +1872,7 @@
 
                       let empId = matId || 'MAT-' + Math.floor(Math.random() * 10000);
                       
-                      newEmployeesList.push({ id: empId, name: name, role: role, shift: shift, schedule: schedule, admissionDate: finalDate, supervisor: supervisor, contact: '-', status: 'Ativo' });
+                      newEmployeesList.push({ id: empId, name: name, role: role, shift: shift, schedule: schedule, admissionDate: finalDate, supervisor: supervisor, contact: '-', status: 'Ativo', inactiveDate: null });
                       added++;
                   }
               }
@@ -1898,8 +1900,19 @@
 
           const toggleStatus = (id) => {
             const emp = employees.find(e => e.id === id);
-            logAction('MUDANÇA_DE_STATUS', `Mudou o status de ${emp.name} para ${emp.status === 'Ativo' ? 'INATIVO' : 'ATIVO'}`);
-            setEmployees(employees.map(e => e.id === id ? { ...e, status: e.status === 'Ativo' ? 'Inativo' : 'Ativo' } : e));
+            const isInactivating = emp.status === 'Ativo';
+            const inactiveDate = isInactivating ? toLocalISODate(new Date()) : null;
+            logAction(
+              'MUDANÇA_DE_STATUS',
+              isInactivating
+                ? `Mudou o status de ${emp.name} para INATIVO em ${formatDateBR(inactiveDate)}`
+                : `Mudou o status de ${emp.name} para ATIVO`
+            );
+            setEmployees(employees.map(e => e.id === id ? {
+              ...e,
+              status: isInactivating ? 'Inativo' : 'Ativo',
+              inactiveDate
+            } : e));
           };
 
           const handleDeleteEmployee = (id) => {
@@ -1939,7 +1952,7 @@
 
           // --- FUNÇÃO PARA EXPORTAR EXCEL ---
           const handleExportExcel = () => {
-              const headers = ['Matrícula', 'Nome Completo', 'Cargo / Função', 'Turno / Setor', 'Horário', 'Data de Admissão', 'Contato (Telefone)', 'Status'];
+              const headers = ['Matrícula', 'Nome Completo', 'Cargo / Função', 'Turno / Setor', 'Horário', 'Data de Admissão', 'Contato (Telefone)', 'Status', 'Data de Desligamento'];
               
               const rows = filteredEmployees.map(emp => [
                   emp.id,
@@ -1949,7 +1962,8 @@
                   `"${emp.schedule || ''}"`,
                   emp.admissionDate && emp.admissionDate !== '-' ? formatDateBR(emp.admissionDate) : '-',
                   `"${emp.contact || '-'}"`,
-                  emp.status
+                  emp.status,
+                  emp.inactiveDate ? formatDateBR(emp.inactiveDate) : '-'
               ]);
 
               const csvContent = [
@@ -2085,7 +2099,7 @@
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                      <tr><th className="p-4 font-bold border-b w-1/4">Funcionário & Matrícula</th><th className="p-4 font-bold border-b">Cargo / Função</th><th className="p-4 font-bold border-b">Turno & Horário</th><th className="p-4 font-bold border-b">Contato</th><th className="p-4 font-bold border-b text-center">Status</th><th className="p-4 font-bold border-b text-center">Ações</th></tr>
+                      <tr><th className="p-4 font-bold border-b w-1/4">Funcionário & Matrícula</th><th className="p-4 font-bold border-b">Cargo / Função</th><th className="p-4 font-bold border-b">Turno & Horário</th><th className="p-4 font-bold border-b">Contato</th><th className="p-4 font-bold border-b text-center">Status</th><th className="p-4 font-bold border-b text-center">Data de Desligamento</th><th className="p-4 font-bold border-b text-center">Ações</th></tr>
                       <tr className="bg-white normal-case tracking-normal">
                         <th className="p-2 border-b align-top">
                           <input type="text" placeholder="Filtrar nome ou matrícula" className="w-full min-w-[190px] border border-gray-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -2119,6 +2133,9 @@
                           </select>
                         </th>
                         <th className="p-2 border-b text-center align-top">
+                          <span className="inline-flex min-w-[135px] items-center justify-center px-3 py-2 text-[11px] font-semibold text-gray-400">Preenchimento automático</span>
+                        </th>
+                        <th className="p-2 border-b text-center align-top">
                           <button type="button" onClick={() => { setSearchTerm(''); setFilterRole(''); setFilterShift(''); setFilterSchedule(''); setFilterContact(''); setFilterStatus(''); }} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold whitespace-nowrap transition">Limpar filtros</button>
                         </th>
                       </tr>
@@ -2131,6 +2148,7 @@
                           <td className="p-4"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded text-xs font-bold border border-slate-200 block w-max">{emp.shift || 'Geral'}</span><div className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1"><Clock className="w-3 h-3" />{emp.schedule || 'Não definido'}</div></td>
                           <td className="p-4 text-sm text-gray-600"><div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-gray-400" />{emp.contact || '-'}</div></td>
                           <td className="p-4 text-center"><span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${emp.status === 'Ativo' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>{emp.status === 'Ativo' ? <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> : <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>}{emp.status}</span></td>
+                          <td className="p-4 text-center text-sm font-semibold text-gray-700 whitespace-nowrap">{emp.status === 'Inativo' && emp.inactiveDate ? formatDateBR(emp.inactiveDate) : '-'}</td>
                           <td className="p-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button onClick={() => setHistoryEmp(emp)} className="p-1.5 bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100 hover:text-blue-700 rounded-lg shadow-sm transition" title="Ver Histórico de Ocorrências"><History className="w-4 h-4" /></button>
@@ -2214,7 +2232,14 @@
                         <div><label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Turno / Setor</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" value={editingEmp.shift} onChange={(e) => handleShiftChange(e.target.value, (val) => setEditingEmp({...editingEmp, shift: val}), (val) => setEditingEmp(prev => ({...prev, schedule: val})))} /></div>
                         <div><label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Horário</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" value={editingEmp.schedule} onChange={(e) => setEditingEmp({...editingEmp, schedule: e.target.value})} /></div>
                       </div>
-                      <div><label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Data de Admissão</label><input type="date" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-gray-600" value={editingEmp.admissionDate} onChange={(e) => setEditingEmp({...editingEmp, admissionDate: e.target.value})} /></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Data de Admissão</label><input type="date" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-gray-600" value={editingEmp.admissionDate} onChange={(e) => setEditingEmp({...editingEmp, admissionDate: e.target.value})} /></div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Data de Desligamento</label>
+                          <input type="date" className={`w-full border rounded-lg px-4 py-2 text-gray-600 ${editingEmp.status === 'Inativo' ? 'border-gray-300 bg-white outline-none focus:ring-2 focus:ring-blue-500' : 'border-gray-200 bg-gray-100 cursor-not-allowed'}`} value={editingEmp.inactiveDate || ''} onChange={(e) => setEditingEmp({...editingEmp, inactiveDate: e.target.value || null})} disabled={editingEmp.status !== 'Inativo'} title={editingEmp.status === 'Inativo' ? 'Você pode corrigir ou informar manualmente a data de desligamento.' : 'A data pode ser informada quando o funcionário estiver inativo.'} />
+                          <p className="text-[10px] text-gray-400 mt-1">Preenchida automaticamente ao inativar, mas pode ser corrigida manualmente.</p>
+                        </div>
+                      </div>
                     </div>
                     <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-slate-50"><button onClick={() => setEditingEmp(null)} className="px-5 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition">Cancelar</button><button onClick={handleSaveEdit} className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-md">Salvar Alterações</button></div>
                   </div>
@@ -2654,3 +2679,4 @@
     </script>
 </body>
 </html>
+
