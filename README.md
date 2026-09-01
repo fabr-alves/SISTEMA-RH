@@ -55,6 +55,8 @@ O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O m
 
 Na lista principal de funcionários existe uma segunda linha de filtros abaixo dos títulos das colunas, permitindo filtrar nome/matrícula, função, turno, horário, contato e status.
 
+Ao alterar um funcionário de **Ativo** para **Inativo**, o sistema registra automaticamente a data do desligamento. A data aparece na lista de funcionários, no formulário de edição, na planilha exportada e permanece nos backups e na nuvem. Para funcionários inativos antigos ou correções, a data pode ser informada manualmente pelo botão da caneta. Ao reativar o funcionário, a data é limpa; uma nova inativação registra a nova data.
+
 ## 3. Autorizar o domínio no Firebase
 
 Depois do primeiro deploy, copie o domínio fornecido pelo Vercel, semelhante a:
@@ -98,3 +100,4 @@ O menu **Acessos** é liberado exclusivamente para a conta administrativa config
 ## Atualizações futuras
 
 Depois que o GitHub estiver conectado ao Vercel, cada atualização enviada para a branch principal criará automaticamente uma nova publicação.
+
