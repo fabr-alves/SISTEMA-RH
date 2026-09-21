@@ -51,6 +51,7 @@ O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O m
 - Alterações e retornos antecipados atualizam os períodos sincronizados.
 - O sistema detecta sobreposição para o mesmo funcionário e coincidências no mesmo turno/setor.
 - O mapa possui filtros por funcionário, matrícula, cargo, turno/setor, status, aprovação e mês.
+- O Mapa Anual de Férias também permite selecionar o ano (incluindo 2027); períodos que cruzam dezembro e janeiro aparecem nos dois anos correspondentes.
 - Os relatórios podem ser exportados em CSV compatível com Excel ou impressos/salvos como PDF.
 
 Na lista principal de funcionários existe uma segunda linha de filtros abaixo dos títulos das colunas, permitindo filtrar nome/matrícula, função, turno, horário, contato e status.
@@ -100,4 +101,3 @@ O menu **Acessos** é liberado exclusivamente para a conta administrativa config
 ## Atualizações futuras
 
 Depois que o GitHub estiver conectado ao Vercel, cada atualização enviada para a branch principal criará automaticamente uma nova publicação.
-
