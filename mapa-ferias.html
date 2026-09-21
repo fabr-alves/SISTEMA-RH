@@ -90,9 +90,8 @@
                 <!-- Ações Globais -->
                 <div class="flex items-center gap-4">
                     <div class="relative">
-                        <select class="appearance-none bg-gray-100 border-none text-sm font-medium py-2 pl-4 pr-8 rounded focus:ring-2 focus:ring-brand-blue outline-none cursor-pointer">
-                            <option>Ano Referência: 2026</option>
-                            <option>Ano Referência: 2027</option>
+                        <select id="header-filter-ano" class="appearance-none bg-gray-100 border-none text-sm font-medium py-2 pl-4 pr-8 rounded focus:ring-2 focus:ring-brand-blue outline-none cursor-pointer" onchange="app.setMapYear(this.value)" aria-label="Ano de referência">
+                            <option value="2026">Ano Referência: 2026</option>
                         </select>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-gray-400 text-xs pointer-events-none"></i>
                     </div>
@@ -418,6 +417,13 @@
         <!-- 5. MAPA DE FÉRIAS ANUAL (A visão tipo Planilha) -->
         <div id="view-mapa" class="hidden h-full flex flex-col">
             <div class="bg-white p-3 rounded-t-lg border border-gray-200 border-b-0 flex flex-wrap gap-4 items-center print-hidden">
+                <label for="map-filter-ano" class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    Ano
+                    <select id="map-filter-ano" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.setMapYear(this.value)" aria-label="Ano do mapa de férias">
+                        <option value="2026">2026</option>
+                    </select>
+                </label>
+
                 <select id="map-filter-setor" class="border rounded px-3 py-1.5 text-sm bg-white font-medium" onchange="app.renderMapa()">
                     <option value="">Todos os turnos/setores</option>
                 </select>
@@ -561,7 +567,7 @@
         const HOJE = new Date('2026-07-13T12:00:00');
         const ANO_VIGENTE = 2026;
 
-        document.getElementById('print-date').innerText = `Emitido em: ${HOJE.toLocaleDateString('pt-BR')} - Ano Referência: ${ANO_VIGENTE}`;
+        document.getElementById('print-date').innerText = `Emitido em: ${new Date().toLocaleDateString('pt-BR')} - Ano Referência: ${ANO_VIGENTE}`;
 
         // Banco de Dados Padrão (Extraído automaticamente da planilha do usuário)
         const dbPadrao = {
@@ -761,6 +767,38 @@
                 return this.getApprovalStatus(ferias) !== 'RECUSADA';
             },
 
+            getSelectedMapYear() {
+                return Number(document.getElementById('map-filter-ano')?.value) || ANO_VIGENTE;
+            },
+
+            setMapYear(year) {
+                document.getElementById('map-filter-ano').value = year;
+                document.getElementById('header-filter-ano').value = year;
+                this.renderDashboard();
+                this.renderMapa();
+            },
+
+            getVacationDaysInMonth(ferias, year, month) {
+                const monthStart = new Date(year, month - 1, 1, 12);
+                const monthEnd = new Date(year, month, 0, 12);
+                const vacationStart = new Date(`${ferias.inicio}T12:00:00`);
+                const vacationEnd = new Date(`${ferias.fim}T12:00:00`);
+                const start = new Date(Math.max(monthStart.getTime(), vacationStart.getTime()));
+                const end = new Date(Math.min(monthEnd.getTime(), vacationEnd.getTime()));
+                if (start > end) return 0;
+                let days = 0;
+                while (start <= end) {
+                    days++;
+                    start.setDate(start.getDate() + 1);
+                }
+                return days;
+            },
+
+            getVacationDaysInYear(ferias, year) {
+                return Array.from({ length: 12 }, (_, index) => this.getVacationDaysInMonth(ferias, year, index + 1))
+                    .reduce((total, days) => total + days, 0);
+            },
+
             periodsOverlap(inicioA, fimA, inicioB, fimB) {
                 return inicioA <= fimB && inicioB <= fimA;
             },
@@ -803,6 +841,7 @@
             closeModal(id) { document.getElementById(id).classList.add('hidden'); },
 
             renderDashboard() {
+                const selectedYear = this.getSelectedMapYear();
                 const ativos = DB.funcionarios.filter(f => f.status === 'Ativo');
                 const feriasAtivas = DB.ferias.filter(f => this.isActiveVacation(f));
                 document.getElementById('kpi-total').innerText = ativos.length;
@@ -831,9 +870,8 @@
 
                 const mesesCount = new Array(12).fill(0);
                 feriasAtivas.forEach(f => {
-                    if(f.inicio.startsWith(ANO_VIGENTE.toString())) {
-                        const mes = parseInt(f.inicio.split('-')[1]) - 1;
-                        mesesCount[mes]++;
+                    for (let month = 1; month <= 12; month++) {
+                        if (this.getVacationDaysInMonth(f, selectedYear, month) > 0) mesesCount[month - 1]++;
                     }
                 });
 
@@ -1220,6 +1258,7 @@
                 const activeTab = document.querySelector('.tab-active')?.id?.replace('tab-', '') || '';
                 const isMapTab = activeTab === 'mapa';
                 const isApprovalTab = activeTab === 'aprovacoes';
+                const selectedYear = isMapTab ? this.getSelectedMapYear() : ANO_VIGENTE;
                 const filterNomeRaw = isMapTab
                     ? document.getElementById('map-filter-nome')?.value
                     : isApprovalTab ? document.getElementById('approval-filter-search')?.value : ''
@@ -1230,6 +1269,7 @@
                     : isApprovalTab ? document.getElementById('approval-filter-setor')?.value : ''
                 ) || '';
                 const filterCargo = isMapTab ? (document.getElementById('map-filter-cargo')?.value || '') : '';
+                const filterEmployeeStatus = isMapTab ? (document.getElementById('map-filter-status-func')?.value || '') : '';
                 const filterWorkflow = isMapTab ? (document.getElementById('map-filter-status-ferias')?.value || '') : '';
                 const filterMonth = isMapTab ? (document.getElementById('map-filter-mes')?.value || '') : '';
 
@@ -1245,8 +1285,11 @@
                     if (filterNome && !employee.nome.toLowerCase().includes(filterNome) && !String(employee.mat).toLowerCase().includes(filterNome)) return null;
                     if (filterSetor && employee.setor !== filterSetor) return null;
                     if (filterCargo && employee.cargo !== filterCargo) return null;
+                    if (filterEmployeeStatus && employee.status !== filterEmployeeStatus) return null;
                     if (filterWorkflow && this.getApprovalStatus(vacation) !== filterWorkflow) return null;
-                    if (filterMonth && parseInt(vacation.inicio.split('-')[1]) !== parseInt(filterMonth)) return null;
+                    if (isMapTab && this.getVacationDaysInYear(vacation, selectedYear) === 0) return null;
+                    if (isMapTab && !filterWorkflow && !this.isActiveVacation(vacation)) return null;
+                    if (filterMonth && this.getVacationDaysInMonth(vacation, selectedYear, Number(filterMonth)) === 0) return null;
 
                     return [
                         employee.mat,
@@ -1255,20 +1298,24 @@
                         employee.setor || '',
                         vacation.inicio,
                         vacation.fim,
-                        vacation.dias,
+                        isMapTab
+                            ? (filterMonth
+                                ? this.getVacationDaysInMonth(vacation, selectedYear, Number(filterMonth))
+                                : this.getVacationDaysInYear(vacation, selectedYear))
+                            : vacation.dias,
                         APPROVAL_LABELS[this.getApprovalStatus(vacation)] || this.getApprovalStatus(vacation),
                         this.getStatusFerias(vacation.inicio, vacation.fim),
                         this.getConflictLabel(vacation) || 'Sem conflitos'
                     ];
                 }).filter(Boolean);
 
-                const headers = ['Matrícula', 'Funcionário', 'Cargo / Função', 'Turno / Setor', 'Início', 'Fim', 'Dias', 'Aprovação', 'Situação do Período', 'Conflitos'];
+                const headers = ['Matrícula', 'Funcionário', 'Cargo / Função', 'Turno / Setor', 'Início', 'Fim', isMapTab ? (filterMonth ? 'Dias no mês' : 'Dias no ano') : 'Dias', 'Aprovação', 'Situação do Período', 'Conflitos'];
                 const csv = [headers, ...rows].map(row => row.map(escapeCell).join(';')).join('\n');
                 const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = `relatorio_mapa_ferias_${ANO_VIGENTE}_${new Date().toISOString().split('T')[0]}.csv`;
+                link.download = `relatorio_mapa_ferias_${selectedYear}_${new Date().toISOString().split('T')[0]}.csv`;
                 document.body.appendChild(link);
                 link.click();
                 link.remove();
@@ -1369,6 +1416,8 @@
 
             renderMapa() {
                 const grid = document.getElementById('map-grid');
+                const selectedYear = this.getSelectedMapYear();
+                document.getElementById('print-date').innerText = `Emitido em: ${new Date().toLocaleDateString('pt-BR')} - Ano Referência: ${selectedYear}`;
                 const filterSetor = document.getElementById('map-filter-setor').value;
                 const filterNome = (document.getElementById('map-filter-nome')?.value || '').toLowerCase();
                 const filterCargo = document.getElementById('map-filter-cargo')?.value || '';
@@ -1390,15 +1439,18 @@
                     if (filterEmployeeStatus && func.status !== filterEmployeeStatus) return;
                     if (filterNome && !func.nome.toLowerCase().includes(filterNome) && !String(func.mat).toLowerCase().includes(filterNome)) return;
 
-                    const allEmployeeVacations = DB.ferias.filter(f => String(f.funcId) === String(func.id) && f.inicio.startsWith(ANO_VIGENTE.toString()));
+                    const allEmployeeVacations = DB.ferias.filter(f =>
+                        String(f.funcId) === String(func.id) && this.getVacationDaysInYear(f, selectedYear) > 0
+                    );
                     const feriasFunc = filterVacationStatus
                         ? allEmployeeVacations.filter(f => this.getApprovalStatus(f) === filterVacationStatus)
                         : allEmployeeVacations.filter(f => this.isActiveVacation(f));
                     if (filterVacationStatus && feriasFunc.length === 0) return;
-                    if (filterMonth && !feriasFunc.some(f => parseInt(f.inicio.split('-')[1]) === parseInt(filterMonth))) return;
+                    if (filterMonth && !feriasFunc.some(f => this.getVacationDaysInMonth(f, selectedYear, Number(filterMonth)) > 0)) return;
 
                     const p = this.calcPeriodos(func.admissao);
-                    const saldo = 30 - allEmployeeVacations.filter(f => this.isActiveVacation(f)).reduce((acc, val) => acc + val.dias, 0);
+                    const saldo = 30 - allEmployeeVacations.filter(f => this.isActiveVacation(f))
+                        .reduce((acc, val) => acc + this.getVacationDaysInYear(val, selectedYear), 0);
                      
                     let alertaVencida = (p.vencida && saldo > 0) ? `<i class="fa-solid fa-circle-exclamation text-status-red ml-2" title="Férias Vencidas!"></i>` : '';
                     const safeFuncId = JSON.stringify(String(func.id));
@@ -1415,6 +1467,7 @@
 
                     for(let i=1; i<=12; i++) {
                         let cellContent = '';
+                        let cellDays = 0;
                         let cellClass = '';
                         let cellTitle = '';
                         if (filterMonth && i !== parseInt(filterMonth)) {
@@ -1423,8 +1476,8 @@
                         }
                          
                         feriasFunc.forEach(f => {
-                            const mesIni = parseInt(f.inicio.split('-')[1]);
-                            if(mesIni === i) {
+                            const daysInMonth = this.getVacationDaysInMonth(f, selectedYear, i);
+                            if(daysInMonth > 0) {
                                 const st = this.getStatusFerias(f.inicio, f.fim);
                                 const approvalStatus = this.getApprovalStatus(f);
                                 if (approvalStatus === 'SOLICITADA') cellClass = 'bg-blue-500 text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
@@ -1434,7 +1487,8 @@
                                 else cellClass = 'bg-status-green text-white font-bold shadow-inner cursor-pointer hover:brightness-95 transition';
                                 const conflictLabel = this.getConflictLabel(f);
                                 if (conflictLabel) cellClass += ' ring-2 ring-purple-500 ring-inset';
-                                cellContent = `${f.dias}d`;
+                                cellDays += daysInMonth;
+                                cellContent = `${cellDays}d`;
                                 cellTitle = `${APPROVAL_LABELS[approvalStatus] || approvalStatus}${conflictLabel ? ` — ${conflictLabel}` : ''}`;
                             }
                         });
@@ -1449,6 +1503,18 @@
             renderFilterOptions() {
                 const setores = Array.from(new Set(DB.funcionarios.map(func => func.setor || 'Geral'))).sort();
                 const cargos = Array.from(new Set(DB.funcionarios.map(func => func.cargo || 'Sem cargo'))).sort();
+                const yearSelect = document.getElementById('map-filter-ano');
+                const previousYear = yearSelect?.value || String(new Date().getFullYear());
+                const recordedYears = DB.ferias.flatMap(f => [Number(f.inicio?.slice(0, 4)), Number(f.fim?.slice(0, 4))])
+                    .filter(year => Number.isInteger(year) && year >= 2000 && year <= 2100);
+                const firstYear = Math.min(ANO_VIGENTE, new Date().getFullYear(), ...recordedYears);
+                const lastYear = Math.max(ANO_VIGENTE + 5, new Date().getFullYear() + 5, ...recordedYears);
+                const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+                [yearSelect, document.getElementById('header-filter-ano')].filter(Boolean).forEach(select => {
+                    select.innerHTML = years.map(year => `<option value="${year}">${select.id === 'header-filter-ano' ? 'Ano Referência: ' : ''}${year}</option>`).join('');
+                    select.value = previousYear;
+                    if (!select.value) select.value = String(ANO_VIGENTE);
+                });
                 const populate = (id, label, values) => {
                     const select = document.getElementById(id);
                     if (!select) return;
