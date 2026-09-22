@@ -6,6 +6,7 @@ Sistema de controle operacional e RH, pronto para ser versionado no GitHub e pub
 
 - `index.html`: aplicação completa.
 - `mapa-ferias.html`: módulo independente exibido na nova aba **Mapa de Férias**.
+- `controle-ponto.html`: módulo independente exibido na aba **Controle de Ponto**, abaixo de Funcionários.
 - `vercel.json`: configuração do site no Vercel.
 - `firestore.rules`: regras de acesso do Cloud Firestore.
 - `firebase.json` e `.firebaserc`: configuração opcional para publicar as regras pelo Firebase CLI.
@@ -39,6 +40,8 @@ git push -u origin main
 O sistema é formado por HTML e JavaScript executados no navegador, portanto não necessita de etapa de build.
 
 O arquivo `mapa-ferias.html` deve permanecer na mesma pasta do `index.html`. O mapa usa o cadastro e o banco de dados do CSVA RH, preservando também o backup local como segurança adicional.
+
+O arquivo `controle-ponto.html` também deve permanecer na mesma pasta do `index.html`. Ele lê arquivos AFD TXT no próprio navegador, associa os registros tipo 5 (funcionário) aos registros tipo 3 (batida) pelo CPF e permite consultar todas as batidas por nome/CPF e período. O arquivo e os dados de ponto não são enviados nem salvos na nuvem; ao fechar ou atualizar a página, é necessário importá-lo novamente. A indicação de entrada/saída é apenas uma estimativa baseada na ordem das batidas, não um espelho oficial de ponto.
 
 ## Integrações do Mapa de Férias
 

@@ -902,6 +902,7 @@
                   <MenuButton icon={LayoutGrid} label="Relatório do Ciclo" active={activeTab === 'relatorio'} onClick={() => setActiveTab('relatorio')} />
                   <MenuButton icon={ShieldAlert} label="Controle de Punição" active={activeTab === 'punicao'} onClick={() => setActiveTab('punicao')} />
                   <MenuButton icon={Users} label="Funcionários" active={activeTab === 'funcionarios'} onClick={() => setActiveTab('funcionarios')} />
+                  <MenuButton icon={Clock} label="Controle de Ponto" active={activeTab === 'controle-ponto'} onClick={() => setActiveTab('controle-ponto')} />
                   <div className="mt-4 mb-2 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gestão e Produtividade</div>
                   <MenuButton icon={ListTodo} label="Lembretes e Tarefas" active={activeTab === 'lembretes'} onClick={() => setActiveTab('lembretes')} />
                   <div className="mt-4 mb-2 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sistema</div>
@@ -931,6 +932,7 @@
                   {activeTab === 'relatorio' && <CycleReportView employees={employees} records={records} />}
                   {activeTab === 'punicao' && <PunishmentView employees={employees} punishments={punishments} setPunishments={setPunishments} logAction={logAction} />}
                   {activeTab === 'funcionarios' && <EmployeesView employees={employees} setEmployees={setEmployees} records={records} logAction={logAction} />}
+                  <div className={activeTab === 'controle-ponto' ? '' : 'hidden'}><TimeClockView /></div>
                   {activeTab === 'lembretes' && <RemindersView employees={employees} reminders={reminders} setReminders={setReminders} logAction={logAction} />}
                   {activeTab === 'acessos' && isAdmin && <AccessManagementView logAction={logAction} />}
                   {activeTab === 'auditoria' && <AuditLogView logs={auditLogs} />}
@@ -942,6 +944,18 @@
         }
 
         // --- SUB-COMPONENTES ---
+        function TimeClockView() {
+          return (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
+              <iframe
+                src="./controle-ponto.html"
+                title="Controle de Ponto"
+                className="w-full h-full border-0 bg-gray-50"
+              />
+            </div>
+          );
+        }
+
         function MenuButton({ icon: Icon, label, active, onClick }) {
           return (
             <button onClick={onClick} className={`w-full flex items-center px-6 py-3 text-sm font-medium transition-colors duration-200 ${active ? 'bg-blue-600 text-white border-r-4 border-blue-400' : 'hover:bg-slate-800 hover:text-white'}`}>

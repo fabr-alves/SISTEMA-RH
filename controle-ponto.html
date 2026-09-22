@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle de Ponto | CSVA RH</title>
+  <style>
+    :root { color-scheme: light; --navy:#0f172a; --slate:#475569; --line:#e2e8f0; --blue:#2563eb; --soft:#f8fafc; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#f4f7fb; color:var(--navy); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    .shell { max-width:1600px; margin:auto; padding:28px; }
+    .hero { background:linear-gradient(120deg,#14294c,#1d4ed8); color:white; border-radius:20px; padding:28px 32px; display:flex; justify-content:space-between; gap:28px; align-items:center; box-shadow:0 14px 32px #1d4ed821; }
+    .eyebrow { font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#bfdbfe; }
+    h1 { font-size:28px; letter-spacing:-.035em; margin:5px 0; }
+    .hero p { margin:0; color:#dbeafe; max-width:650px; }
+    .hero-mark { flex:none; width:58px; height:58px; border:1px solid #ffffff65; border-radius:17px; display:grid; place-items:center; background:#ffffff18; font-size:28px; }
+    .panel { background:white; border:1px solid var(--line); border-radius:17px; box-shadow:0 3px 14px #0f172a08; }
+    .upload-panel { margin-top:20px; padding:22px; }
+    .section-heading { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
+    h2 { font-size:17px; letter-spacing:-.015em; margin:0; }
+    .muted { color:#64748b; font-size:13px; margin:4px 0 0; }
+    .privacy { font-size:12px; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:999px; padding:5px 10px; white-space:nowrap; }
+    .drop { border:1.5px dashed #aac2ec; background:#f8fbff; border-radius:14px; min-height:130px; display:flex; align-items:center; justify-content:center; gap:22px; padding:20px; transition:.15s; }
+    .drop.dragging { border-color:var(--blue); background:#eff6ff; }
+    .upload-icon { width:54px; height:54px; flex:none; border-radius:15px; display:grid; place-items:center; background:#dbeafe; color:#1d4ed8; font-size:27px; }
+    .drop-copy { flex:1; }
+    .drop-copy strong { display:block; font-size:15px; }
+    .drop-copy span { display:block; margin-top:4px; color:#64748b; font-size:12px; }
+    .primary { background:var(--blue); color:white; border:1px solid var(--blue); box-shadow:0 4px 8px #2563eb22; }
+    .primary:hover { background:#1d4ed8; }
+    .btn { min-height:40px; border-radius:10px; padding:9px 15px; font-weight:700; white-space:nowrap; }
+    .secondary { background:white; border:1px solid #cbd5e1; color:#334155; }
+    .secondary:hover { background:#f8fafc; }
+    .secondary:disabled { opacity:.5; cursor:not-allowed; }
+    .status { margin:13px 0 0; min-height:20px; color:#475569; font-size:13px; }
+    .status.error { color:#b91c1c; }
+    .status.success { color:#166534; }
+    .stats { margin:18px 0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+    .stat { padding:17px 19px; }
+    .stat .label { color:#64748b; font-size:12px; font-weight:650; }
+    .stat .number { display:block; color:#0f172a; font-size:25px; letter-spacing:-.03em; font-weight:800; margin-top:4px; }
+    .stat .detail { color:#94a3b8; font-size:11px; }
+    .results-panel { padding:21px; }
+    .filters { display:grid; grid-template-columns:minmax(220px,2fr) repeat(2,minmax(145px,1fr)) auto; gap:12px; align-items:end; }
+    .field label { display:block; font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.055em; margin-bottom:6px; }
+    .field input { display:block; width:100%; height:41px; border:1px solid #cbd5e1; border-radius:9px; background:white; color:#0f172a; padding:0 12px; outline:none; }
+    .field input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #dbeafe; }
+    .field input:disabled { background:#f8fafc; }
+    .filter-actions { display:flex; gap:7px; }
+    .result-bar { border-top:1px solid #eef2f7; margin-top:20px; padding-top:17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .result-count strong { display:block; font-size:15px; }
+    .result-count span { color:#64748b; font-size:12px; }
+    .view-switch { display:flex; gap:4px; background:#f1f5f9; padding:4px; border-radius:10px; }
+    .view-switch button { border:0; color:#64748b; background:transparent; border-radius:7px; padding:6px 11px; font-size:12px; font-weight:700; }
+    .view-switch button.active { color:#1d4ed8; background:white; box-shadow:0 1px 4px #0f172a15; }
+    .table-wrap { overflow:auto; margin-top:16px; border:1px solid var(--line); border-radius:12px; }
+    table { width:100%; border-collapse:collapse; min-width:760px; }
+    th { background:#f8fafc; color:#64748b; text-transform:uppercase; letter-spacing:.05em; font-size:11px; text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    td { padding:12px 16px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
+    tr:last-child td { border-bottom:0; }
+    tbody tr:hover { background:#f8fbff; }
+    .person { display:block; font-weight:700; color:#0f172a; }
+    .cpf { display:block; font-size:11px; color:#94a3b8; margin-top:2px; font-variant-numeric:tabular-nums; }
+    .time { font-size:15px; font-weight:800; color:#1d4ed8; font-variant-numeric:tabular-nums; }
+    .badge { display:inline-block; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:750; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
+    .badge.out { background:#f1f5f9; color:#475569; }
+    .punches { display:flex; flex-wrap:wrap; gap:7px; }
+    .punch { display:inline-flex; align-items:center; gap:6px; border-radius:7px; padding:4px 8px; color:#1e40af; background:#eff6ff; font-weight:700; font-variant-numeric:tabular-nums; }
+    .punch.out { color:#475569; background:#f1f5f9; }
+    .empty { min-height:195px; margin-top:16px; display:grid; place-items:center; text-align:center; border:1px dashed #cbd5e1; border-radius:12px; background:#f8fafc; padding:25px; color:#64748b; }
+    .empty strong { display:block; color:#334155; margin-bottom:4px; font-size:15px; }
+    .note { display:flex; gap:8px; margin:16px 1px 0; color:#64748b; font-size:12px; }
+    [hidden] { display:none!important; }
+    @media(max-width:950px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } .filter-actions { justify-content:flex-start; } }
+    @media(max-width:700px) { .shell { padding:14px; } .hero { padding:22px; } .hero-mark { display:none; } .stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .drop { display:block; text-align:center; } .upload-icon { margin:0 auto 12px; } .drop .btn { margin-top:15px; } .section-heading,.result-bar { flex-wrap:wrap; } .privacy { white-space:normal; } }
+    @media(max-width:520px) { .filters { grid-template-columns:1fr; } .filter-actions { flex-wrap:wrap; } .stats { gap:8px; } .stat { padding:12px; } .stat .number { font-size:20px; } }
+    @media print { body { background:white; } .shell { padding:0; } .hero,.upload-panel,.filters,.view-switch,.note { display:none!important; } .results-panel,.stat { box-shadow:none; } .table-wrap { overflow:visible; } table { min-width:0; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div><div class="eyebrow">Gestão operacional · CSVA RH</div><h1>Controle de Ponto</h1><p>Importe o TXT do relógio de ponto para consultar todas as batidas por funcionário e período.</p></div>
+      <div class="hero-mark" aria-hidden="true">◷</div>
+    </header>
+
+    <section class="panel upload-panel" aria-labelledby="upload-heading">
+      <div class="section-heading"><div><h2 id="upload-heading">Importar arquivo de ponto</h2><p class="muted">Formato AFD em TXT: registros tipo 5 identificam funcionários e tipo 3 contêm as batidas.</p></div><span class="privacy">✓ Processado somente neste navegador</span></div>
+      <div class="drop" id="dropZone">
+        <div class="upload-icon" aria-hidden="true">⇧</div>
+        <div class="drop-copy"><strong>Arraste o arquivo TXT aqui ou escolha no computador</strong><span>Uma nova importação substitui apenas os dados desta consulta. Nenhum arquivo é enviado à nuvem.</span></div>
+        <button class="btn primary" id="selectFile" type="button">Selecionar TXT</button>
+        <input id="fileInput" type="file" accept=".txt,text/plain" hidden>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite">Aguardando arquivo de ponto.</p>
+    </section>
+
+    <section class="stats" aria-label="Resumo do arquivo">
+      <div class="panel stat"><span class="label">Batidas únicas</span><strong class="number" id="totalPunches">—</strong><span class="detail">Após remover registros repetidos</span></div>
+      <div class="panel stat"><span class="label">Funcionários</span><strong class="number" id="totalPeople">—</strong><span class="detail">CPFs com batidas no arquivo</span></div>
+      <div class="panel stat"><span class="label">Dias com registros</span><strong class="number" id="totalDays">—</strong><span class="detail">Funcionário + data</span></div>
+      <div class="panel stat"><span class="label">Período encontrado</span><strong class="number" id="period" style="font-size:16px;padding-top:8px">—</strong><span class="detail" id="fileSummary">Nenhum TXT importado</span></div>
+    </section>
+
+    <section class="panel results-panel" aria-labelledby="results-heading">
+      <div class="section-heading"><div><h2 id="results-heading">Registros de ponto</h2><p class="muted">Busque por nome ou CPF e filtre o intervalo de datas.</p></div><button class="btn secondary" id="printButton" type="button" disabled>Imprimir / PDF</button></div>
+      <div class="filters">
+        <div class="field"><label for="search">Funcionário ou CPF</label><input id="search" type="search" placeholder="Digite nome ou CPF..." disabled></div>
+        <div class="field"><label for="startDate">Data inicial</label><input id="startDate" type="date" disabled></div>
+        <div class="field"><label for="endDate">Data final</label><input id="endDate" type="date" disabled></div>
+        <div class="filter-actions"><button class="btn secondary" id="clearFilters" type="button" disabled>Limpar filtros</button></div>
+      </div>
+      <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="allView" type="button" class="active" aria-pressed="true">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
+      <div id="empty" class="empty"><div><strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.</div></div>
+      <div id="tableWrap" class="table-wrap" hidden><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
+      <p class="note">ⓘ Entrada e saída são estimativas pela ordem das batidas do dia. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const numberFormat = new Intl.NumberFormat('pt-BR');
+    let punches = [];
+    let currentFile = '';
+    let activeView = 'all';
+
+    // Adaptado do leitor AFD em E:\\ponto_web_consorcio\\app.py, sem servidor.
+    function parseAfd(content) {
+      const lines = content.split(/\r\n|\n|\r/);
+      const type5 = /^\d{9}5\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}[IA]?(\d{12})(.{1,52})/;
+      const type3 = /^(\d{9})3(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})[+-]\d{4}\s*[IA]?\s*(\d{10,14})/;
+      const names = new Map();
+      const stats = { lines:lines.length, type5:0, type3:0, invalidType3:0, invalidDate:0, duplicates:0 };
+      const normalizeCpf = value => value.replace(/^0+/, '') || '0';
+      for (const line of lines) {
+        const match = type5.exec(line);
+        if (!match) continue;
+        stats.type5++;
+        const name = match[2].trim().replace(/\s*\d+\s*$/, '').trim();
+        if (name && !names.has(normalizeCpf(match[1]))) names.set(normalizeCpf(match[1]), name);
+      }
+      const seen = new Set();
+      const records = [];
+      for (const line of lines) {
+        const match = type3.exec(line);
+        if (!match) {
+          if (/^\d{9}3/.test(line)) stats.invalidType3++;
+          continue;
+        }
+        stats.type3++;
+        const timestamp = match[2];
+        if (!isValidTimestamp(timestamp)) { stats.invalidDate++; continue; }
+        const cpf = normalizeCpf(match[3]);
+        const key = cpf + '|' + timestamp;
+        if (seen.has(key)) { stats.duplicates++; continue; }
+        seen.add(key);
+        records.push({ nsr:match[1], date:timestamp.slice(0,10), time:timestamp.slice(11), timestamp, cpf, name:names.get(cpf) || 'Não informado', sequence:0, kind:'' });
+      }
+      const groups = new Map();
+      for (const record of records) {
+        const key = record.cpf + '|' + record.date;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(record);
+      }
+      for (const group of groups.values()) {
+        group.sort((a,b) => a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
+        group.forEach((record,index) => {
+          record.sequence = index + 1;
+          record.kind = group.length === 1 ? (record.time < '12:00:00' ? 'Entrada' : 'Saída') : (index % 2 ? 'Saída' : 'Entrada');
+        });
+      }
+      records.sort((a,b) => b.timestamp.localeCompare(a.timestamp) || a.name.localeCompare(b.name,'pt-BR') || a.nsr.localeCompare(b.nsr));
+      return { records, stats, groups:groups.size };
+    }
+
+    function isValidTimestamp(value) {
+      const year = +value.slice(0,4), month = +value.slice(5,7), day = +value.slice(8,10);
+      const hour = +value.slice(11,13), minute = +value.slice(14,16), second = +value.slice(17,19);
+      const check = new Date(Date.UTC(year, month - 1, day));
+      return year >= 1900 && year <= 9999 && check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day && hour <= 23 && minute <= 59 && second <= 59;
+    }
+
+    function dateBr(value) { return value.slice(8,10) + '/' + value.slice(5,7) + '/' + value.slice(0,4); }
+    function normalizedSearch(value) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+    function cell(row,value,className) { const node=document.createElement('td'); if (className) node.className=className; node.textContent=value; row.appendChild(node); return node; }
+    function personCell(row,record) {
+      const td=document.createElement('td');
+      const name=document.createElement('span'); name.className='person'; name.textContent=record.name;
+      const cpf=document.createElement('span'); cpf.className='cpf'; cpf.textContent='CPF ' + record.cpf;
+      td.append(name,cpf); row.appendChild(td);
+    }
+    function setStatus(message,type='') { $('status').textContent=message; $('status').className='status ' + type; }
+
+    async function loadFile(file) {
+      if (!file) return;
+      if (!/\.txt$/i.test(file.name)) { setStatus('Selecione um arquivo com extensão .txt.','error'); return; }
+      if (file.size > 50 * 1024 * 1024) { setStatus('O arquivo excede 50 MB. Divida o TXT para consultar neste navegador.','error'); return; }
+      setStatus('Lendo e organizando as batidas de ' + file.name + '...');
+      try {
+        const bytes = await file.arrayBuffer();
+        let content;
+        try { content = new TextDecoder('utf-8',{fatal:true}).decode(bytes); }
+        catch { content = new TextDecoder('iso-8859-1').decode(bytes); }
+        const result = parseAfd(content);
+        if (!result.records.length) { setStatus('Nenhuma batida AFD tipo 3 válida encontrada. Confira se este TXT segue o formato do arquivo de referência.','error'); return; }
+        punches = result.records;
+        currentFile = file.name;
+        $('search').value=''; $('startDate').value=''; $('endDate').value='';
+        for (const id of ['search','startDate','endDate','clearFilters','printButton']) $(id).disabled=false;
+        $('totalPunches').textContent=numberFormat.format(punches.length);
+        $('totalPeople').textContent=numberFormat.format(new Set(punches.map(item=>item.cpf)).size);
+        $('totalDays').textContent=numberFormat.format(result.groups);
+        const dates=punches.map(item=>item.date).sort();
+        $('period').textContent=dateBr(dates[0]) + ' – ' + dateBr(dates[dates.length-1]);
+        $('fileSummary').textContent=file.name;
+        const warnings=[];
+        if (result.stats.invalidType3) warnings.push(result.stats.invalidType3 + ' linha(s) tipo 3 fora do padrão');
+        if (result.stats.invalidDate) warnings.push(result.stats.invalidDate + ' data(s) inválida(s)');
+        if (result.stats.duplicates) warnings.push(result.stats.duplicates + ' duplicata(s) removida(s)');
+        setStatus('Arquivo importado: ' + numberFormat.format(result.stats.lines) + ' linhas, ' + numberFormat.format(punches.length) + ' batidas.' + (warnings.length ? ' Atenção: ' + warnings.join('; ') + '.' : ''),'success');
+        render();
+      } catch (error) { setStatus('Não foi possível ler este arquivo. ' + (error && error.message ? error.message : ''),'error'); }
+      finally { $('fileInput').value=''; }
+    }
+
+    function filteredPunches() {
+      const query=normalizedSearch($('search').value.trim());
+      const digits=$('search').value.replace(/\D/g,'');
+      const start=$('startDate').value, end=$('endDate').value;
+      return punches.filter(record => (!query || normalizedSearch(record.name).includes(query) || (digits && record.cpf.includes(digits))) && (!start || record.date>=start) && (!end || record.date<=end));
+    }
+
+    function render() {
+      const list=filteredPunches();
+      const groups=new Map();
+      for (const record of list) {
+        const key=record.cpf+'|'+record.date;
+        if (!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(record);
+      }
+      $('resultCount').textContent=numberFormat.format(list.length) + (list.length===1 ? ' batida encontrada' : ' batidas encontradas');
+      $('resultSub').textContent=numberFormat.format(groups.size) + ' dia(s) de funcionário' + (currentFile ? ' · ' + currentFile : '');
+      const empty=$('empty'), tableWrap=$('tableWrap'), head=$('tableHead'), body=$('tableBody');
+      body.replaceChildren(); head.replaceChildren();
+      empty.hidden=list.length>0; tableWrap.hidden=list.length===0;
+      if (!list.length) { empty.firstElementChild.innerHTML = punches.length ? '<strong>Nenhuma batida neste filtro</strong>Altere a busca ou o período para ver outros registros.' : '<strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.'; return; }
+      const header=document.createElement('tr');
+      const titles=activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
+      for (const title of titles) { const th=document.createElement('th'); th.textContent=title; header.appendChild(th); }
+      head.appendChild(header);
+      if (activeView==='all') {
+        for (const record of list) {
+          const row=document.createElement('tr');
+          cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.time,'time');
+          const kind=cell(row,record.kind); kind.className=''; const badge=document.createElement('span'); badge.className='badge'+(record.kind==='Saída'?' out':''); badge.textContent=record.kind+' (estimado)'; kind.replaceChildren(badge);
+          cell(row,record.nsr); body.appendChild(row);
+        }
+      } else {
+        for (const group of groups.values()) {
+          group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+          const row=document.createElement('tr'); cell(row,dateBr(group[0].date)); personCell(row,group[0]);
+          const td=document.createElement('td'), wrap=document.createElement('div'); wrap.className='punches';
+          for (const record of group) { const chip=document.createElement('span'); chip.className='punch'+(record.kind==='Saída'?' out':''); chip.textContent=record.time+' · '+record.kind; wrap.appendChild(chip); }
+          td.appendChild(wrap); row.appendChild(td); cell(row,String(group.length)); body.appendChild(row);
+        }
+      }
+    }
+
+    $('selectFile').addEventListener('click',()=>$('fileInput').click());
+    $('fileInput').addEventListener('change',event=>loadFile(event.target.files[0]));
+    const drop=$('dropZone');
+    drop.addEventListener('dragover',event=>{ event.preventDefault(); drop.classList.add('dragging'); });
+    drop.addEventListener('dragleave',()=>drop.classList.remove('dragging'));
+    drop.addEventListener('drop',event=>{ event.preventDefault(); drop.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
+    for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
+    $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; render(); });
+    $('printButton').addEventListener('click',()=>window.print());
+    for (const [id,view] of [['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
+      activeView=view;
+      for (const [buttonId,buttonView] of [['allView','all'],['dayView','day']]) { $(buttonId).classList.toggle('active',buttonView===view); $(buttonId).setAttribute('aria-pressed',String(buttonView===view)); }
+      render();
+    });
+  </script>
+</body>
+</html>
