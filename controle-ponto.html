@@ -19,6 +19,7 @@
     .panel { background:white; border:1px solid var(--line); border-radius:17px; box-shadow:0 3px 14px #0f172a08; }
     .upload-panel { margin-top:20px; padding:22px; }
     .section-heading { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
+    .report-actions { display:flex; flex-wrap:wrap; gap:8px; }
     h2 { font-size:17px; letter-spacing:-.015em; margin:0; }
     .muted { color:#64748b; font-size:13px; margin:4px 0 0; }
     .privacy { font-size:12px; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:999px; padding:5px 10px; white-space:nowrap; }
@@ -34,6 +35,9 @@
     .secondary { background:white; border:1px solid #cbd5e1; color:#334155; }
     .secondary:hover { background:#f8fafc; }
     .secondary:disabled { opacity:.5; cursor:not-allowed; }
+    .excel { background:#ecfdf5; border:1px solid #a7f3d0; color:#047857; }
+    .excel:hover { background:#d1fae5; }
+    .excel:disabled { opacity:.5; cursor:not-allowed; }
     .status { margin:13px 0 0; min-height:20px; color:#475569; font-size:13px; }
     .status.error { color:#b91c1c; }
     .status.success { color:#166534; }
@@ -114,7 +118,7 @@
     </section>
 
     <section class="panel results-panel" aria-labelledby="results-heading">
-      <div class="section-heading"><div><h2 id="results-heading">Registros de ponto</h2><p class="muted">Busque por nome ou CPF e filtre o intervalo de datas.</p></div><button class="btn secondary" id="printButton" type="button" disabled>Imprimir / PDF</button></div>
+      <div class="section-heading"><div><h2 id="results-heading">Registros de ponto</h2><p class="muted">Busque por nome ou CPF e filtre o intervalo de datas.</p></div><div class="report-actions"><button class="btn excel" id="excelButton" type="button" disabled>Exportar Excel (.CSV)</button><button class="btn secondary" id="printButton" type="button" disabled>Imprimir / PDF</button></div></div>
       <div class="filters">
         <div class="field"><label for="search">Funcionário ou CPF</label><input id="search" type="search" placeholder="Digite nome ou CPF..." disabled></div>
         <div class="field"><label for="startDate">Data inicial</label><input id="startDate" type="date" disabled></div>
@@ -244,6 +248,16 @@
       return punches.filter(record => (!matched || matched.has(employeeKey(record))) && (!start || record.date>=start) && (!end || record.date<=end));
     }
 
+    function groupPunches(list) {
+      const groups=new Map();
+      for (const record of list) {
+        const key=employeeKey(record)+'|'+record.date;
+        if (!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(record);
+      }
+      return groups;
+    }
+
     function pairedRows(groups) {
       const rows=[];
       const orderedGroups=[...groups.values()].sort((a,b)=>a[0].date.localeCompare(b[0].date) || a[0].name.localeCompare(b[0].name,'pt-BR') || a[0].cpf.localeCompare(b[0].cpf));
@@ -260,14 +274,50 @@
       return rows;
     }
 
+    function exportTable(list,view) {
+      const groups=groupPunches(list);
+      if (view==='paired') return {
+        headers:['Data','Entrada','Saída','CPF','Nome'],
+        rows:pairedRows(groups).map(row=>[dateBr(row.date),row.entry || '',row.exit || '',row.cpf,row.name])
+      };
+      if (view==='all') return {
+        headers:['Data','Nome','CPF','Hora','Tipo estimado','NSR'],
+        rows:list.map(record=>[dateBr(record.date),record.name,record.cpf,record.time,record.kind,record.nsr])
+      };
+      return {
+        headers:['Data','Nome','CPF','Batidas do dia','Quantidade'],
+        rows:[...groups.values()].map(group=>{
+          group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
+          return [dateBr(group[0].date),group[0].name,[...new Set(group.map(record=>record.cpf))].sort().join(', '),group.map(record=>record.time+' '+record.kind).join(' | '),group.length];
+        })
+      };
+    }
+
+    function csvCell(value) {
+      let text=String(value ?? '').replace(/[\r\n]+/g,' ');
+      if (/^\s*[=+\-@]/.test(text)) text="'"+text;
+      return '"'+text.replace(/"/g,'""')+'"';
+    }
+
+    function exportExcel() {
+      const list=filteredPunches();
+      if (!list.length) return;
+      const {headers,rows}=exportTable(list,activeView);
+      const csv='\uFEFF'+[headers,...rows].map(row=>row.map(csvCell).join(';')).join('\r\n');
+      const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+      const link=document.createElement('a');
+      link.href=url;
+      link.download='Controle_Ponto_'+activeView+'_'+new Date().toISOString().slice(0,10)+'.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+
     function render() {
       const list=filteredPunches();
-      const groups=new Map();
-      for (const record of list) {
-        const key=employeeKey(record)+'|'+record.date;
-        if (!groups.has(key)) groups.set(key,[]);
-        groups.get(key).push(record);
-      }
+      const groups=groupPunches(list);
+      $('excelButton').disabled=list.length===0;
       $('resultCount').textContent=numberFormat.format(list.length) + (list.length===1 ? ' batida encontrada' : ' batidas encontradas');
       $('resultSub').textContent=numberFormat.format(groups.size) + ' dia(s) de funcionário' + (currentFile ? ' · ' + currentFile : '');
       const empty=$('empty'), tableWrap=$('tableWrap'), head=$('tableHead'), body=$('tableBody');
@@ -311,6 +361,7 @@
     drop.addEventListener('drop',event=>{ event.preventDefault(); drop.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
     for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
     $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; render(); });
+    $('excelButton').addEventListener('click',exportExcel);
     $('printButton').addEventListener('click',()=>window.print());
     for (const [id,view] of [['pairedView','paired'],['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
       activeView=view;
