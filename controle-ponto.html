@@ -124,7 +124,7 @@
       <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="pairedView" type="button" class="active" aria-pressed="true">Entrada e saída</button><button id="allView" type="button" aria-pressed="false">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
       <div id="empty" class="empty"><div><strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.</div></div>
       <div id="tableWrap" class="table-wrap" hidden><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
-      <p class="note">ⓘ Entrada e saída são estimativas pela ordem das batidas do dia. Dias com mais de duas batidas aparecem em linhas adicionais. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
+      <p class="note">ⓘ O resumo mostra a primeira entrada e a primeira saída estimadas de cada funcionário no dia, como no arquivo de referência. Todas as outras batidas permanecem disponíveis nas demais visualizações. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
     </section>
   </main>
   <script>
@@ -134,6 +134,7 @@
     let punches = [];
     let currentFile = '';
     let activeView = 'paired';
+    const employeeKey = record => record.name === 'Não informado' ? 'cpf:' + record.cpf : 'nome:' + record.name;
 
     // Adaptado do leitor AFD em E:\\ponto_web_consorcio\\app.py, sem servidor.
     function parseAfd(content) {
@@ -162,14 +163,15 @@
         const timestamp = match[2];
         if (!isValidTimestamp(timestamp)) { stats.invalidDate++; continue; }
         const cpf = normalizeCpf(match[3]);
-        const key = cpf + '|' + timestamp;
+        const name = names.get(cpf) || 'Não informado';
+        const key = employeeKey({ cpf, name }) + '|' + timestamp;
         if (seen.has(key)) { stats.duplicates++; continue; }
         seen.add(key);
-        records.push({ nsr:match[1], date:timestamp.slice(0,10), time:timestamp.slice(11), timestamp, cpf, name:names.get(cpf) || 'Não informado', sequence:0, kind:'' });
+        records.push({ nsr:match[1], date:timestamp.slice(0,10), time:timestamp.slice(11), timestamp, cpf, name, sequence:0, kind:'' });
       }
       const groups = new Map();
       for (const record of records) {
-        const key = record.cpf + '|' + record.date;
+        const key = employeeKey(record) + '|' + record.date;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(record);
       }
@@ -238,7 +240,8 @@
       const query=normalizedSearch($('search').value.trim());
       const digits=$('search').value.replace(/\D/g,'');
       const start=$('startDate').value, end=$('endDate').value;
-      return punches.filter(record => (!query || normalizedSearch(record.name).includes(query) || (digits && record.cpf.includes(digits))) && (!start || record.date>=start) && (!end || record.date<=end));
+      const matched=query ? new Set(punches.filter(record => normalizedSearch(record.name).includes(query) || (digits && record.cpf.includes(digits))).map(employeeKey)) : null;
+      return punches.filter(record => (!matched || matched.has(employeeKey(record))) && (!start || record.date>=start) && (!end || record.date<=end));
     }
 
     function pairedRows(groups) {
@@ -246,11 +249,13 @@
       const orderedGroups=[...groups.values()].sort((a,b)=>a[0].date.localeCompare(b[0].date) || a[0].name.localeCompare(b[0].name,'pt-BR') || a[0].cpf.localeCompare(b[0].cpf));
       for (const group of orderedGroups) {
         group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
-        for (let index=0; index<group.length; index+=2) {
-          const first=group[index], second=group[index+1];
-          const singleExit=group.length===1 && first.kind==='Saída';
-          rows.push({ date:first.date, entry:singleExit ? null : first.time, exit:singleExit ? first.time : (second?.time || null), cpf:first.cpf, name:first.name });
-        }
+        rows.push({
+          date:group[0].date,
+          entry:group.find(record=>record.kind==='Entrada')?.time || null,
+          exit:group.find(record=>record.kind==='Saída')?.time || null,
+          cpf:[...new Set(group.map(record=>record.cpf))].sort().join(', '),
+          name:group[0].name
+        });
       }
       return rows;
     }
@@ -259,7 +264,7 @@
       const list=filteredPunches();
       const groups=new Map();
       for (const record of list) {
-        const key=record.cpf+'|'+record.date;
+        const key=employeeKey(record)+'|'+record.date;
         if (!groups.has(key)) groups.set(key,[]);
         groups.get(key).push(record);
       }
