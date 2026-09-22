@@ -59,6 +59,15 @@
     table { width:100%; border-collapse:collapse; min-width:760px; }
     th { background:#f8fafc; color:#64748b; text-transform:uppercase; letter-spacing:.05em; font-size:11px; text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); white-space:nowrap; }
     td { padding:12px 16px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
+    .paired-table th { background:#343b43; color:white; text-transform:none; letter-spacing:0; font-size:13px; text-align:center; }
+    .paired-table th:first-child { width:125px; }
+    .paired-table th:nth-child(2), .paired-table th:nth-child(3) { width:125px; }
+    .paired-table th:nth-child(4) { width:185px; }
+    .paired-table th:last-child { text-align:left; }
+    .paired-table td { border-right:1px solid var(--line); }
+    .paired-table td:last-child { border-right:0; white-space:nowrap; font-weight:650; }
+    .paired-table td:first-child, .paired-table td:nth-child(2), .paired-table td:nth-child(3) { text-align:center; white-space:nowrap; }
+    .paired-table td.time { color:#0f172a; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
     tr:last-child td { border-bottom:0; }
     tbody tr:hover { background:#f8fbff; }
     .person { display:block; font-weight:700; color:#0f172a; }
@@ -112,10 +121,10 @@
         <div class="field"><label for="endDate">Data final</label><input id="endDate" type="date" disabled></div>
         <div class="filter-actions"><button class="btn secondary" id="clearFilters" type="button" disabled>Limpar filtros</button></div>
       </div>
-      <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="allView" type="button" class="active" aria-pressed="true">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
+      <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="pairedView" type="button" class="active" aria-pressed="true">Entrada e saída</button><button id="allView" type="button" aria-pressed="false">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
       <div id="empty" class="empty"><div><strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.</div></div>
       <div id="tableWrap" class="table-wrap" hidden><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
-      <p class="note">ⓘ Entrada e saída são estimativas pela ordem das batidas do dia. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
+      <p class="note">ⓘ Entrada e saída são estimativas pela ordem das batidas do dia. Dias com mais de duas batidas aparecem em linhas adicionais. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
     </section>
   </main>
   <script>
@@ -124,7 +133,7 @@
     const numberFormat = new Intl.NumberFormat('pt-BR');
     let punches = [];
     let currentFile = '';
-    let activeView = 'all';
+    let activeView = 'paired';
 
     // Adaptado do leitor AFD em E:\\ponto_web_consorcio\\app.py, sem servidor.
     function parseAfd(content) {
@@ -232,6 +241,20 @@
       return punches.filter(record => (!query || normalizedSearch(record.name).includes(query) || (digits && record.cpf.includes(digits))) && (!start || record.date>=start) && (!end || record.date<=end));
     }
 
+    function pairedRows(groups) {
+      const rows=[];
+      const orderedGroups=[...groups.values()].sort((a,b)=>a[0].date.localeCompare(b[0].date) || a[0].name.localeCompare(b[0].name,'pt-BR') || a[0].cpf.localeCompare(b[0].cpf));
+      for (const group of orderedGroups) {
+        group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
+        for (let index=0; index<group.length; index+=2) {
+          const first=group[index], second=group[index+1];
+          const singleExit=group.length===1 && first.kind==='Saída';
+          rows.push({ date:first.date, entry:singleExit ? null : first.time, exit:singleExit ? first.time : (second?.time || null), cpf:first.cpf, name:first.name });
+        }
+      }
+      return rows;
+    }
+
     function render() {
       const list=filteredPunches();
       const groups=new Map();
@@ -244,13 +267,20 @@
       $('resultSub').textContent=numberFormat.format(groups.size) + ' dia(s) de funcionário' + (currentFile ? ' · ' + currentFile : '');
       const empty=$('empty'), tableWrap=$('tableWrap'), head=$('tableHead'), body=$('tableBody');
       body.replaceChildren(); head.replaceChildren();
+      tableWrap.firstElementChild.classList.toggle('paired-table',activeView==='paired');
       empty.hidden=list.length>0; tableWrap.hidden=list.length===0;
       if (!list.length) { empty.firstElementChild.innerHTML = punches.length ? '<strong>Nenhuma batida neste filtro</strong>Altere a busca ou o período para ver outros registros.' : '<strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.'; return; }
       const header=document.createElement('tr');
-      const titles=activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
+      const titles=activeView==='paired' ? ['Data','Entrada','Saída','CPF','Nome'] : activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
       for (const title of titles) { const th=document.createElement('th'); th.textContent=title; header.appendChild(th); }
       head.appendChild(header);
-      if (activeView==='all') {
+      if (activeView==='paired') {
+        for (const pair of pairedRows(groups)) {
+          const row=document.createElement('tr');
+          cell(row,dateBr(pair.date)); cell(row,pair.entry || '—','time'); cell(row,pair.exit || '—','time');
+          cell(row,pair.cpf); cell(row,pair.name); body.appendChild(row);
+        }
+      } else if (activeView==='all') {
         for (const record of list) {
           const row=document.createElement('tr');
           cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.time,'time');
@@ -277,9 +307,9 @@
     for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
     $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; render(); });
     $('printButton').addEventListener('click',()=>window.print());
-    for (const [id,view] of [['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
+    for (const [id,view] of [['pairedView','paired'],['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
       activeView=view;
-      for (const [buttonId,buttonView] of [['allView','all'],['dayView','day']]) { $(buttonId).classList.toggle('active',buttonView===view); $(buttonId).setAttribute('aria-pressed',String(buttonView===view)); }
+      for (const [buttonId,buttonView] of [['pairedView','paired'],['allView','all'],['dayView','day']]) { $(buttonId).classList.toggle('active',buttonView===view); $(buttonId).setAttribute('aria-pressed',String(buttonView===view)); }
       render();
     });
   </script>
