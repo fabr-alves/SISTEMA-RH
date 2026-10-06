@@ -903,6 +903,7 @@
                   <MenuButton icon={ShieldAlert} label="Controle de Punição" active={activeTab === 'punicao'} onClick={() => setActiveTab('punicao')} />
                   <MenuButton icon={Users} label="Funcionários" active={activeTab === 'funcionarios'} onClick={() => setActiveTab('funcionarios')} />
                   <MenuButton icon={Clock} label="Controle de Ponto" active={activeTab === 'controle-ponto'} onClick={() => setActiveTab('controle-ponto')} />
+                  <MenuButton icon={CalendarClock} label="Controle de Escala" active={activeTab === 'controle-escala'} onClick={() => setActiveTab('controle-escala')} />
                   <div className="mt-4 mb-2 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gestão e Produtividade</div>
                   <MenuButton icon={ListTodo} label="Lembretes e Tarefas" active={activeTab === 'lembretes'} onClick={() => setActiveTab('lembretes')} />
                   <div className="mt-4 mb-2 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sistema</div>
@@ -933,6 +934,7 @@
                   {activeTab === 'punicao' && <PunishmentView employees={employees} punishments={punishments} setPunishments={setPunishments} logAction={logAction} />}
                   {activeTab === 'funcionarios' && <EmployeesView employees={employees} setEmployees={setEmployees} records={records} logAction={logAction} />}
                   <div className={activeTab === 'controle-ponto' ? '' : 'hidden'}><TimeClockView /></div>
+                  <div className={activeTab === 'controle-escala' ? '' : 'hidden'}><ScheduleControlView /></div>
                   {activeTab === 'lembretes' && <RemindersView employees={employees} reminders={reminders} setReminders={setReminders} logAction={logAction} />}
                   {activeTab === 'acessos' && isAdmin && <AccessManagementView logAction={logAction} />}
                   {activeTab === 'auditoria' && <AuditLogView logs={auditLogs} />}
@@ -944,6 +946,19 @@
         }
 
         // --- SUB-COMPONENTES ---
+        function ScheduleControlView() {
+          return (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
+              <iframe
+                src="./escala.html"
+                title="Controle de Escala"
+                loading="lazy"
+                className="w-full h-full border-0 bg-gray-50"
+              />
+            </div>
+          );
+        }
+
         function TimeClockView() {
           return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
@@ -2693,4 +2708,3 @@
     </script>
 </body>
 </html>
-
