@@ -1,4 +1,7 @@
-<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Escala — Convocações e folgas</title><style>
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Escala — Convocações e folgas</title><script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore-compat.js"></script>
+<style>
 :root{font-family:Inter,Segoe UI,sans-serif;color:#173c38;background:#f4f6f3;font-size:15px}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer;border:1px solid #ccd7d1;background:white;color:#234a42;border-radius:8px;padding:10px 15px;font-weight:600}button:hover{background:#e8efea}button.primary{background:#17664f;color:white;border-color:#17664f}button.danger{color:#a63827}header{padding:24px 5%;background:#143f35;color:white;display:flex;align-items:center;justify-content:space-between}.brand{font-size:26px;letter-spacing:-1px;font-weight:750}.brand small{font-size:12px;letter-spacing:2px;color:#afceba;margin-left:20px}main{max-width:1280px;margin:auto;padding:36px 32px}h1{font-size:32px;letter-spacing:-1px;margin:0 0 8px}p{line-height:1.6;color:#60756b}.top{display:flex;justify-content:space-between;align-items:center;gap:20px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:28px 0}.stat{background:white;border:1px solid #dee5dc;border-radius:12px;padding:20px}.stat strong{font-size:32px;display:block;margin-top:12px}.stat span{color:#6b7b71;font-size:13px}.tabs{display:flex;gap:8px;border-bottom:1px solid #dbe2db;margin-bottom:22px;padding-bottom:12px}.tabs button{border:0;background:transparent}.tabs button.active{background:#dceade;color:#15513d}.panel{background:white;border:1px solid #dde4dd;border-radius:12px;padding:24px}.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px}.toolbar input{flex:1;min-width:180px}input,select,textarea{border:1px solid #ccd7d0;padding:10px 12px;border-radius:7px;background:white;color:#23483e}input:focus,select:focus,textarea:focus{outline:2px solid #619b7b}table{border-collapse:collapse;width:100%;text-align:left}th{color:#768379;font-size:11px;text-transform:uppercase;letter-spacing:1px;background:#f6f8f4}td,th{padding:16px 12px;border-bottom:1px solid #edf0e9}td small{display:block;color:#7b877e;margin-top:5px}.pill{display:inline-block;border-radius:6px;background:#e9f1e9;color:#31674d;padding:6px 9px;font-size:12px}.pill.warn{background:#fff0d8;color:#936021}.pill.bad{background:#fbe7df;color:#a84730}.empty{text-align:center;padding:50px 20px;color:#718075}.empty b{display:block;font-size:20px;color:#304f42;margin-bottom:10px}.note{background:#e8efe6;padding:15px 20px;border-radius:8px;font-size:13px;line-height:1.6;margin:20px 0}.alert{background:#fff0e7;border:1px solid #efc6ad;padding:20px;border-radius:9px;margin-bottom:15px}.alert h3{margin:0 0 8px}.scroll{overflow:auto}dialog{border:0;border-radius:16px;padding:28px;width:550px;max-width:95vw;box-shadow:0 20px 80px #173c3840}dialog::backdrop{background:#122a2466}dialog h2{margin:0 0 8px}label.field{display:grid;gap:7px;margin:18px 0;font-size:13px;font-weight:600}.row{display:flex;gap:12px}.row>*{flex:1}.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}.check{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid #e7ece5}.check span{flex:1}.checklist{max-height:220px;overflow:auto;border:1px solid #dbe4d9;border-radius:8px}footer{font-size:12px;color:#79877b;margin:24px 0;display:flex;justify-content:space-between;gap:15px}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#153f35;color:white;padding:14px 22px;border-radius:8px;z-index:5}button:disabled{opacity:.5;cursor:not-allowed}@media(max-width:750px){main{padding:24px 16px}.stats{grid-template-columns:repeat(2,1fr)}header{padding:20px}.brand small{display:none}.top{align-items:flex-start;flex-direction:column}.tabs{overflow:auto}.panel{padding:14px}.row{display:block}footer{flex-direction:column}.toolbar>*{max-width:100%}}@media print{header button,.tabs,.toolbar,button,footer,.note{display:none}main{padding:0}.panel{border:0}}
 
 /* Interface ampla e agrupamento por dia */
@@ -11,9 +14,9 @@
 
 @media(min-width:1001px){header{padding-top:14px;padding-bottom:14px}main{padding-top:24px}.top{margin-bottom:20px}.top-tag{margin-bottom:6px}h1{font-size:28px}.top p{font-size:13px}.stats{margin-bottom:18px}.stat{padding:15px 22px}.stat strong{font-size:29px;margin-top:9px}.tabs{margin-bottom:20px}.tabs button{padding-top:10px;padding-bottom:10px}.section-title{margin-bottom:15px}}
 .check[hidden]{display:none}
-</style><header><div class="brand">▦ &nbsp;escala <small>CONTROLE OPERACIONAL</small></div><span>Convocações & compensações</span></header><main><div class="top"><div><div class="top-tag">Gestão da equipe</div><h1>Convocações e compensações</h1><p>Cada dia organizado. Cada turno com a cobertura certa.</p></div><div class="top-actions"><button onclick="tab='import';render()">↥ Importar lista</button><button class="primary" onclick="callForm()">＋ Nova convocação</button></div></div><div class="stats" id="stats"></div><nav class="tabs" id="tabs"></nav><section id="content"></section><div class="note">ⓘ &nbsp;<b>Regra de cobertura:</b> até 1 funcionário de cada turno por dia de folga. Turnos diferentes não conflitam. A segunda folga no mesmo turno exige autorização expressa com justificativa.</div><footer><span>Dados salvos somente neste navegador. Faça backup regularmente. Não há sincronização entre computadores.</span><div><button onclick="backup()">Baixar backup</button> <button onclick="document.getElementById('restore').click()">Restaurar</button><input id="restore" type="file" accept="application/json" hidden onchange="restoreFile(this)"></div></footer></main><dialog id="modal"></dialog><script>
+</style><header><div class="brand">▦ &nbsp;escala <small>CONTROLE OPERACIONAL</small></div><span>Convocações & compensações</span></header><main><div class="top"><div><div class="top-tag">Gestão da equipe</div><h1>Convocações e compensações</h1><p>Cada dia organizado. Cada turno com a cobertura certa.</p></div><div class="top-actions"><button onclick="tab='import';render()">↥ Importar lista</button><button class="primary" onclick="callForm()">＋ Nova convocação</button></div></div><div class="stats" id="stats"></div><nav class="tabs" id="tabs"></nav><section id="content"></section><div class="note">ⓘ &nbsp;<b>Regra de cobertura:</b> até 1 funcionário de cada turno por dia de folga. Turnos diferentes não conflitam. A segunda folga no mesmo turno exige autorização expressa com justificativa.</div><footer><span><span id="scaleCloudStatus" role="status" aria-live="polite">Conectando escala ao Firebase...</span> Backup local disponível.</span><div><button onclick="backup()">Baixar backup</button> <button onclick="document.getElementById('restore').click()">Restaurar</button><input id="restore" type="file" accept="application/json" hidden onchange="restoreFile(this)"></div></footer></main><dialog id="modal"></dialog><script>
 const KEY='escala-operacional-v1';const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const uid=()=>crypto.randomUUID();const fmt=s=>s?s.split('-').reverse().join('/'):'—';const today=()=>{let d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};let db={employees:[],records:[],audit:[]},tab='records',query='',turn='',status='',workDate='';const closedDates=new Set();try{db=JSON.parse(localStorage.getItem(KEY))||db}catch{alert('Não foi possível ler os dados salvos. Restaure um backup antes de continuar.')}let pending=null;
-function save(){try{localStorage.setItem(KEY,JSON.stringify(db));return true}catch{alert('Não foi possível salvar. Baixe um backup para preservar os dados.');return false}}function log(text){db.audit.unshift({at:new Date().toISOString(),text})}function toast(t){let d=document.createElement('div');d.className='toast';d.textContent=t;document.body.append(d);setTimeout(()=>d.remove(),3500)}function employeeName(r){return db.employees.find(e=>e.id===r.employee)?.name||'Funcionário'}function active(r){return r.choice==='leave'&&['approved','exception'].includes(r.state)}function conflicts(r,date){return db.records.filter(x=>x.id!==r.id&&active(x)&&x.off===date&&x.shift===r.shift)}function label(r){return ({pending:'A definir',paid:'Hora extra',approved:'Folga aprovada',exception:'Exceção autorizada',denied:'Folga negada',cancelled:'Cancelada'})[r.state]||r.state}function badge(r){return `<span class="pill ${['pending','exception'].includes(r.state)?'warn':r.state==='denied'?'bad':''}">${label(r)}</span>`}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db));queueScaleChanges();return true}catch{alert('Não foi possível salvar. Baixe um backup para preservar os dados.');return false}}function log(text){db.audit.unshift({at:new Date().toISOString(),text})}function toast(t){let d=document.createElement('div');d.className='toast';d.textContent=t;document.body.append(d);setTimeout(()=>d.remove(),3500)}function employeeName(r){return db.employees.find(e=>e.id===r.employee)?.name||'Funcionário'}function active(r){return r.choice==='leave'&&['approved','exception'].includes(r.state)}function conflicts(r,date){return db.records.filter(x=>x.id!==r.id&&active(x)&&x.off===date&&x.shift===r.shift)}function label(r){return ({pending:'A definir',paid:'Hora extra',approved:'Folga aprovada',exception:'Exceção autorizada',denied:'Folga negada',cancelled:'Cancelada'})[r.state]||r.state}function badge(r){return `<span class="pill ${['pending','exception'].includes(r.state)?'warn':r.state==='denied'?'bad':''}">${label(r)}</span>`}
 function render(){let vals=[['Convocações ativas',db.records.filter(r=>r.state!=='cancelled').length],['Compensações a definir',db.records.filter(r=>r.state==='pending'||r.state==='denied').length],['Folgas aprovadas',db.records.filter(active).length],['Horas extras',db.records.filter(r=>r.state==='paid').length]];$('#stats').innerHTML=vals.map(([s,n])=>`<div class="stat"><span>${s}</span><strong>${n}</strong></div>`).join('');$('#tabs').innerHTML=[['records','Convocações'],['import','Importar lista'],['calendar','Agenda de folgas'],['employees','Funcionários'],['history','Histórico']].map(([id,t])=>`<button class="${tab===id?'active':''}" onclick="tab='${id}';render()">${t}</button>`).join('');if(tab==='records')records();if(tab==='import')importView();if(tab==='employees')employees();if(tab==='calendar')calendar();if(tab==='history')$('#content').innerHTML=`<div class="panel"><h2>Histórico de decisões</h2>${db.audit.length?db.audit.map(a=>`<p><small>${esc(new Date(a.at).toLocaleString('pt-BR'))}</small><br>${esc(a.text)}</p>`).join(''):'Nenhuma alteração registrada.'}</div>`}
 function weekday(date){return new Date(date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long'})}
 function filteredRecords(){return db.records.filter(r=>(!workDate||r.date===workDate)&&(!turn||r.shift===turn)&&(!status||r.state===status)&&(!query||employeeName(r).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))).sort((a,b)=>b.date.localeCompare(a.date)||employeeName(a).localeCompare(employeeName(b),'pt-BR'))}
@@ -95,7 +98,7 @@ function applyChoice(r,data){Object.assign(r,data);log(`${employeeName(r)} · tr
 function decide(ev,yes){if(ev)ev.preventDefault();if(!pending)return;let r=db.records.find(r=>r.id===pending.id);let f=yes?new FormData(ev.target):null;let why=yes?`${f.get('who').trim()}: ${f.get('why').trim()}`:'Negada por conflito de cobertura.';if(yes&&(!f.get('who').trim()||!f.get('why').trim()))return alert('Preencha responsável e justificativa.');applyChoice(r,{choice:'leave',off:pending.off,state:yes?'exception':'denied',justification:why})}
 function cancelRecord(id){if(!confirm('Cancelar esta convocação e liberar a folga associada? O histórico será preservado.'))return;let r=db.records.find(r=>r.id===id);applyChoice(r,{state:'cancelled',choice:'',off:'',justification:'Convocação cancelada pelo operador'})}
 function download(text,type,file){let u=URL.createObjectURL(new Blob([text],{type}));let a=document.createElement('a');a.href=u;a.download=file;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}function backup(){download(JSON.stringify({version:1,...db},null,2),'application/json',`escala-backup-${today()}.json`)}
-async function restoreFile(input){try{let x=JSON.parse(await input.files[0].text());if(x.version!==1||!Array.isArray(x.employees)||!Array.isArray(x.records)||!Array.isArray(x.audit)||x.employees.some(e=>!e.id||typeof e.name!=='string'||!(typeof e.shift==='string'&&e.shift.trim()&&e.shift.length<=120))||x.records.some(r=>!r.id||!x.employees.some(e=>e.id===r.employee)||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!(typeof r.shift==='string'&&r.shift.trim()&&r.shift.length<=120)||!['pending','paid','approved','exception','denied','cancelled'].includes(r.state)||!['','paid','leave'].includes(r.choice)||(r.choice==='leave'&&!/^\d{4}-\d{2}-\d{2}$/.test(r.off)))||x.audit.some(a=>typeof a.at!=='string'||typeof a.text!=='string'))throw Error();if(confirm('Restaurar este backup substituirá todos os dados deste navegador. Deseja continuar?')){db={employees:x.employees,records:x.records,audit:x.audit};rhSnapshot=undefined;syncRhRoster();log('Backup restaurado.');if(save()){render();toast('Backup restaurado')}}}catch{alert('Backup inválido. Nenhum dado foi importado.')}input.value=''}
+async function restoreFile(input){try{let x=JSON.parse(await input.files[0].text());if(x.version!==1||!Array.isArray(x.employees)||!Array.isArray(x.records)||!Array.isArray(x.audit)||x.employees.some(e=>!e.id||typeof e.name!=='string'||!(typeof e.shift==='string'&&e.shift.trim()&&e.shift.length<=120))||x.records.some(r=>!r.id||!x.employees.some(e=>e.id===r.employee)||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!(typeof r.shift==='string'&&r.shift.trim()&&r.shift.length<=120)||!['pending','paid','approved','exception','denied','cancelled'].includes(r.state)||!['','paid','leave'].includes(r.choice)||(r.choice==='leave'&&!/^\d{4}-\d{2}-\d{2}$/.test(r.off)))||x.audit.some(a=>typeof a.at!=='string'||typeof a.text!=='string'))throw Error();if(confirm('Restaurar este backup substituirá os dados da escala e enviará as alterações ao Firebase quando conectado. Deseja continuar?')){db={employees:x.employees,records:x.records,audit:x.audit};rhSnapshot=undefined;syncRhRoster();log('Backup restaurado.');if(save()){render();toast('Backup restaurado')}}}catch{alert('Backup inválido. Nenhum dado foi importado.')}input.value=''}
 function exportCSV(){let lines=[['Funcionário','Matrícula','Turno','Trabalho','Motivo','Compensação','Folga','Decisão']];db.records.forEach(r=>lines.push([employeeName(r),db.employees.find(e=>e.id===r.employee)?.code,r.shift,fmt(r.date),r.reason,label(r),fmt(r.off),r.justification]));download('\ufeff'+lines.map(row=>row.map(v=>'"'+String(v??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv;charset=utf-8',`escala-${today()}.csv`)}
 // Importação: nada é gravado antes da revisão e confirmação do operador.
 let importRows=[],importNotes=[],importSource='',importText='',importImage='',importBusy=false,importBook=null;
@@ -124,5 +127,142 @@ function bulkImportShift(){let s=$('#bulkShift').value;if(s)importRows.forEach(r
 function addImportRow(){importRows.push({name:'',date:$('#importDefaultDate')?.value||'',shift:'',rawShift:'',role:'',department:'',hours:'',source:'Manual',reason:'Fora do plantão',include:true});showImportPreview()}
 function commitImport(){if(importBusy)return alert('Aguarde o fim da leitura.');if(!$('#reviewImport')?.checked)return alert('Confira a prévia e marque a confirmação de revisão.');let checks=importCheck(),selected=importRows.map((r,i)=>({r,c:checks[i]})).filter(x=>x.r.include&&!x.c.skip);if(!selected.length)return alert('Nenhuma convocação nova selecionada.');if(selected.some(x=>x.c.errors.length))return alert('Corrija as linhas com pendências ou desmarque-as antes de importar.');let previous=JSON.stringify(db),batch=uid(),created=0;for(let {r} of selected){let e=db.employees.find(e=>norm(e.name)===norm(r.name));if(!e){e={id:uid(),name:r.name.trim(),code:'',shift:r.shift};db.employees.push(e);created++}db.records.push({id:uid(),employee:e.id,shift:r.shift,date:r.date,reason:r.reason,choice:'',state:'pending',off:'',justification:'',role:r.role,department:r.department,hours:r.hours,importSource:r.source,importBatch:batch})}log(`Importação: ${selected.length} convocações e ${created} novos funcionários. ${selected.map(({r})=>r.name+' em '+fmt(r.date)+' (turno '+r.shift+')').join('; ')}.`);if(!save()){db=JSON.parse(previous);return}importRows=[];importText='';importNotes=[];if(importImage){URL.revokeObjectURL(importImage);importImage=''}tab='records';query='';turn='';status='';workDate='';closedDates.clear();render();toast(`${selected.length} convocações importadas. Compensações a definir.`)}
 
-window.addEventListener('storage',e=>{if(e.key===KEY){try{db=JSON.parse(e.newValue)||{employees:[],records:[],audit:[]};closeModal();render();toast('Dados atualizados em outra aba')}catch{}}});window.addEventListener('storage',e=>{if(e.key==='csva_employees_v5'||e.key===null)refreshRhRoster()});window.addEventListener('focus',refreshRhRoster);syncRhRoster();render();
+const SCALE_FIELDS=['employees','records','audit'];
+function scheduleData(value){const result={};for(const field of SCALE_FIELDS)result[field]=Array.isArray(value?.[field])?value[field]:[];return JSON.parse(JSON.stringify(result))}
+function scheduleKey(field,item){return field==='audit'?String(item.id||item.at+'|'+item.text):String(item.id)}
+function reconcileScheduleEmployees(data){
+ const byRh=new Map(),aliases=new Map(),employees=[];
+ for(const employee of data.employees){
+  const key=employee.rhId==null?'':String(employee.rhId),existing=key&&byRh.get(key);
+  if(existing){aliases.set(employee.id,existing.id);continue}
+  employees.push(employee);if(key)byRh.set(key,employee);
+ }
+ data.employees=employees;
+ for(const record of data.records)if(aliases.has(record.employee))record.employee=aliases.get(record.employee);
+ return data;
+}
+function schedulePatch(before,after){
+ const patch={};
+ for(const field of SCALE_FIELDS){
+  const old=new Map(before[field].map(item=>[scheduleKey(field,item),item])),next=new Map(after[field].map(item=>[scheduleKey(field,item),item]));
+  patch[field]={upsert:[...next].filter(([key,item])=>!old.has(key)||JSON.stringify(old.get(key))!==JSON.stringify(item)).map(([,item])=>item),remove:[...old.keys()].filter(key=>!next.has(key))};
+ }
+ return patch;
+}
+function applySchedulePatch(data,patch){
+ const result=scheduleData(data);
+ for(const field of SCALE_FIELDS){
+  const values=new Map(result[field].map(item=>[scheduleKey(field,item),item]));
+  for(const key of patch?.[field]?.remove||[])values.delete(key);
+  for(const item of patch?.[field]?.upsert||[])values.set(scheduleKey(field,item),item);
+  result[field]=[...values.values()];
+ }
+ result.audit.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+ return reconcileScheduleEmployees(result);
+}
+function combineSchedulePatches(first,second){
+ const result={};
+ for(const field of SCALE_FIELDS){
+  const upsert=new Map((first?.[field]?.upsert||[]).map(item=>[scheduleKey(field,item),item])),remove=new Set(first?.[field]?.remove||[]);
+  for(const key of second?.[field]?.remove||[]){remove.add(key);upsert.delete(key)}
+  for(const item of second?.[field]?.upsert||[]){const key=scheduleKey(field,item);remove.delete(key);upsert.set(key,item)}
+  result[field]={upsert:[...upsert.values()],remove:[...remove]};
+ }
+ return result;
+}
+function hasSchedulePatch(patch){return SCALE_FIELDS.some(field=>patch?.[field]?.upsert?.length||patch?.[field]?.remove?.length)}
+function mergeMissingSchedule(remote,local){
+ const result=scheduleData(remote);
+ for(const field of SCALE_FIELDS){const keys=new Set(result[field].map(item=>scheduleKey(field,item)));for(const item of local[field])if(!keys.has(scheduleKey(field,item))){keys.add(scheduleKey(field,item));result[field].push(item)}}
+ return reconcileScheduleEmployees(result);
+}
+
+const SCALE_OUTBOX='escala-cloud-outbox-v1',SCALE_MIGRATED='escala-cloud-migrated-v1';
+let scalePending={},scaleRevision=0,scaleWriting=false,scaleReady=false,scaleRef=null,scaleFirestore=null,scaleUnsubscribe=null,scaleTimer=null,scaleLocalBase=scheduleData(db),scaleGeneration=0;
+try{scalePending=JSON.parse(localStorage.getItem(SCALE_OUTBOX))||{}}catch{}
+function scaleStatus(message){const node=document.getElementById('scaleCloudStatus');if(node)node.textContent=message}
+function persistScalePending(){localStorage.setItem(SCALE_OUTBOX,JSON.stringify(scalePending))}
+function queueScaleChanges(){
+ const next=scheduleData(db),patch=schedulePatch(scaleLocalBase,next);scaleLocalBase=next;
+ if(!hasSchedulePatch(patch))return;
+ scalePending=combineSchedulePatches(scalePending,patch);scaleRevision++;persistScalePending();
+ scaleStatus('Salvo neste navegador · aguardando sincronização com o Firebase.');
+ clearTimeout(scaleTimer);scaleTimer=setTimeout(flushScaleCloud,500);
+}
+async function flushScaleCloud(){
+ if(!scaleReady||!scaleRef||scaleWriting||!hasSchedulePatch(scalePending))return;
+ scaleWriting=true;scaleStatus('Salvando escala no Firebase...');
+ const patch=JSON.parse(JSON.stringify(scalePending)),revision=scaleRevision,generation=scaleGeneration,ref=scaleRef;
+ try{
+  await scaleFirestore.runTransaction(async transaction=>{
+   const snapshot=await transaction.get(ref);
+   const current=scheduleData(snapshot.exists?snapshot.data():{});
+   const next=applySchedulePatch(current,patch);
+   transaction.set(ref,{...next,version:1,updatedAt:new Date().toISOString()},{merge:true});
+  });
+  if(generation!==scaleGeneration)return;
+  if(revision===scaleRevision){scalePending={};persistScalePending()}
+  localStorage.setItem(SCALE_MIGRATED,'1');
+  scaleStatus(hasSchedulePatch(scalePending)?'Aguardando envio das novas alterações...':'Escala sincronizada com o Firebase.');
+ }catch(error){
+  console.error('Falha ao sincronizar escala:',error);
+  scaleStatus('Não foi possível salvar no Firebase. Dados preservados neste navegador; reconecte e tente novamente.');
+ }finally{
+  scaleWriting=false;
+  if(generation===scaleGeneration && revision!==scaleRevision && hasSchedulePatch(scalePending))scaleTimer=setTimeout(flushScaleCloud,500);
+ }
+}
+function startScaleCloud(){
+ try{
+  const firebaseConfig={
+            apiKey: "AIzaSyDn1KhCbqSmMUtpz3bmb7Ic0RTq62PD0YE",
+            authDomain: "sistema-rh-csva.firebaseapp.com",
+            projectId: "sistema-rh-csva",
+            storageBucket: "sistema-rh-csva.firebasestorage.app",
+            messagingSenderId: "798799339559",
+            appId: "1:798799339559:web:4f2429e29893217833ae02"
+        };
+  if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+  scaleFirestore=firebase.firestore();
+  firebase.auth().onAuthStateChanged(user=>{
+   scaleGeneration++;scaleReady=false;
+   if(scaleUnsubscribe){scaleUnsubscribe();scaleUnsubscribe=null}
+   scaleRef=null;
+   if(!user){scaleStatus('Entre no SISTEMA-RH neste navegador para sincronizar a escala com o Firebase.');return}
+   scaleStatus('Carregando escala do Firebase...');
+   scaleRef=scaleFirestore.collection('sistema_rh_dados').doc('controle_escala');
+   let first=true;
+   scaleUnsubscribe=scaleRef.onSnapshot({includeMetadataChanges:true},snapshot=>{
+    // Aguarda dados confirmados pelo servidor antes de iniciar a migração.
+    if(snapshot.metadata.fromCache&&!scaleReady){scaleStatus('Aguardando conexão com o Firebase. Alterações locais preservadas.');return}
+    let remote=scheduleData(snapshot.exists?snapshot.data():{});
+    if(first){
+     first=false;
+     if(localStorage.getItem(SCALE_MIGRATED)!=='1'){
+      const migration=schedulePatch(remote,mergeMissingSchedule(remote,scheduleData(db)));
+      scalePending=combineSchedulePatches(migration,scalePending);
+      scaleRevision++;persistScalePending();
+      if(!hasSchedulePatch(scalePending))localStorage.setItem(SCALE_MIGRATED,'1');
+     }
+    }
+    const next=applySchedulePatch(remote,scalePending);
+    db=next;scaleLocalBase=scheduleData(next);
+    localStorage.setItem(KEY,JSON.stringify(db));
+    // Atualiza nomes e turnos a partir do RH sem alterar turnos de convocações antigas.
+    rhSnapshot=undefined;syncRhRoster();
+    scaleReady=true;
+    render();
+    if(hasSchedulePatch(scalePending))flushScaleCloud();
+    else scaleStatus(snapshot.metadata.fromCache?'Sem confirmação do servidor · dados locais preservados.':'Escala sincronizada com o Firebase.');
+   },error=>{
+    scaleReady=false;console.error('Falha ao carregar escala:',error);
+    scaleStatus('Firebase indisponível ou acesso não autorizado. Os dados locais foram preservados.');
+   });
+  });
+ }catch(error){console.error('Falha ao iniciar Firebase da escala:',error);scaleStatus('Firebase não carregou. Abra o RH conectado à internet; os dados locais foram preservados.')}
+}
+window.addEventListener('online',()=>{if(scaleReady)flushScaleCloud()});
+window.addEventListener('offline',()=>scaleStatus('Sem conexão · alterações salvas neste navegador e aguardando envio.'));
+
+window.addEventListener('storage',e=>{if(e.key===KEY){try{db=JSON.parse(e.newValue)||{employees:[],records:[],audit:[]};scaleLocalBase=scheduleData(db);closeModal();render();toast('Dados atualizados em outra aba')}catch{}}if(e.key===SCALE_OUTBOX){try{scalePending=JSON.parse(e.newValue)||{};scaleRevision++;flushScaleCloud()}catch{}}});window.addEventListener('storage',e=>{if(e.key==='csva_employees_v5'||e.key===null)refreshRhRoster()});window.addEventListener('focus',refreshRhRoster);syncRhRoster();render();startScaleCloud();
 </script></html>
