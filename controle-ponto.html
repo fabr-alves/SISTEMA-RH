@@ -8,7 +8,7 @@
     :root { color-scheme: light; --navy:#0f172a; --slate:#475569; --line:#e2e8f0; --blue:#2563eb; --soft:#f8fafc; }
     * { box-sizing: border-box; }
     body { margin:0; background:#f4f7fb; color:var(--navy); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-    button,input { font:inherit; }
+    button,input,select { font:inherit; }
     button { cursor:pointer; }
     .shell { max-width:1600px; margin:auto; padding:28px; }
     .hero { background:linear-gradient(120deg,#14294c,#1d4ed8); color:white; border-radius:20px; padding:28px 32px; display:flex; justify-content:space-between; gap:28px; align-items:center; box-shadow:0 14px 32px #1d4ed821; }
@@ -53,10 +53,10 @@
     .stat .number { display:block; color:#0f172a; font-size:25px; letter-spacing:-.03em; font-weight:800; margin-top:4px; }
     .stat .detail { color:#94a3b8; font-size:11px; }
     .results-panel { padding:21px; }
-    .filters { display:grid; grid-template-columns:minmax(220px,2fr) repeat(2,minmax(145px,1fr)) auto; gap:12px; align-items:end; }
+    .filters { display:grid; grid-template-columns:minmax(220px,2fr) repeat(3,minmax(145px,1fr)) auto; gap:12px; align-items:end; }
     .field label { display:block; font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.055em; margin-bottom:6px; }
-    .field input { display:block; width:100%; height:41px; border:1px solid #cbd5e1; border-radius:9px; background:white; color:#0f172a; padding:0 12px; outline:none; }
-    .field input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #dbeafe; }
+    .field input,.field select { display:block; width:100%; height:41px; border:1px solid #cbd5e1; border-radius:9px; background:white; color:#0f172a; padding:0 12px; outline:none; }
+    .field input:focus,.field select:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #dbeafe; }
     .field input:disabled { background:#f8fafc; }
     .filter-actions { display:flex; gap:7px; }
     .result-bar { border-top:1px solid #eef2f7; margin-top:20px; padding-top:17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -129,10 +129,12 @@
 
     <section class="panel results-panel" aria-labelledby="results-heading">
       <div class="section-heading"><div><h2 id="results-heading">Registros de ponto</h2><p class="muted">Busque por nome ou CPF e filtre o intervalo de datas.</p></div><div class="report-actions"><button class="btn excel" id="excelButton" type="button" disabled>Exportar Excel (.CSV)</button><button class="btn secondary" id="printButton" type="button" disabled>Imprimir / PDF</button></div></div>
+      <p id="rhSyncStatus" class="muted" role="status" aria-live="polite"></p>
       <div class="filters">
         <div class="field"><label for="search">Funcionário ou CPF</label><input id="search" type="search" placeholder="Digite nome ou CPF..." disabled></div>
         <div class="field"><label for="startDate">Data inicial</label><input id="startDate" type="date" disabled></div>
         <div class="field"><label for="endDate">Data final</label><input id="endDate" type="date" disabled></div>
+        <div class="field"><label for="shiftFilter">Turno / Setor</label><select id="shiftFilter" disabled><option value="">Todos os turnos</option></select></div>
         <div class="filter-actions"><button class="btn secondary" id="clearFilters" type="button" disabled>Limpar filtros</button></div>
       </div>
       <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="pairedView" type="button" class="active" aria-pressed="true">Entrada e saída</button><button id="allView" type="button" aria-pressed="false">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
@@ -151,6 +153,73 @@
     const employeeKey = record => record.name;
 
     // Lógica de ponto_web_consorcio/app.py adaptada para execução local no navegador.
+    function rhNameKey(value) {
+      return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+    }
+
+    function rhCpfKey(value) {
+      const digits=String(value || '').replace(/\D/g,'').replace(/^0+/,'');
+      return digits || '';
+    }
+
+    function matchRhEmployee(record,employees) {
+      const cpf=rhCpfKey(record.cpfRaw || record.cpf);
+      // Matrícula/id do RH não é CPF. Só campos explicitamente de CPF são usados.
+      const byCpf=cpf ? employees.filter(employee=>rhCpfKey(employee.cpf)===cpf) : [];
+      if (byCpf.length===1) return byCpf[0];
+      if (byCpf.length>1) return null;
+      if (!record.hasName) return null;
+      const name=rhNameKey(record.name);
+      const byName=employees.filter(employee=>rhNameKey(employee.name)===name);
+      if (byName.length!==1) return null;
+      const candidate=byName[0], candidateCpf=rhCpfKey(candidate.cpf);
+      // CPF conflitante impede que um homônimo receba o turno de outra pessoa.
+      if (candidateCpf && cpf && candidateCpf!==cpf) return null;
+      return candidate;
+    }
+
+    function groupShift(group) {
+      return [...new Set(group.map(record=>record.rhShift || 'Não identificado no RH'))].sort().join(' / ');
+    }
+
+    function syncRhEmployees() {
+      let employees=[], available=false;
+      try {
+        const saved=localStorage.getItem('csva_employees_v5');
+        if (saved!==null) {
+          const parsed=JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            employees=parsed.filter(employee=>employee && typeof employee==='object' && !Array.isArray(employee));
+            available=true;
+          }
+        }
+      } catch { /* Mantém os registros de ponto mesmo sem acesso ao cadastro local. */ }
+      for (const record of punches) {
+        const employee=matchRhEmployee(record,employees);
+        record.rhMatched=!!employee;
+        record.rhShift=employee ? String(employee.shift || 'Geral').trim() || 'Geral' : 'Não identificado no RH';
+      }
+      const select=$('shiftFilter'), previous=select.value;
+      select.replaceChildren();
+      function option(value,label) {
+        const node=document.createElement('option');
+        node.value=value; node.textContent=label; select.appendChild(node);
+      }
+      option('','Todos os turnos');
+      const shifts=[...new Set(punches.filter(record=>record.rhMatched).map(record=>record.rhShift))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+      for (const shift of shifts) option(shift,shift);
+      if (punches.some(record=>!record.rhMatched)) option('__RH_UNMATCHED__','Não identificado no RH');
+      select.value=[...select.options].some(item=>item.value===previous) ? previous : '';
+      select.disabled=!punches.length;
+      const identified=new Set(punches.filter(record=>record.rhMatched).map(record=>record.cpf)).size;
+      const unidentified=new Set(punches.filter(record=>!record.rhMatched).map(record=>record.cpf)).size;
+      $('rhSyncStatus').textContent=!available || !employees.length
+        ? 'Abra o SISTEMA-RH neste navegador e carregue o cadastro de funcionários para identificar os turnos automaticamente.'
+        : 'Turnos do cadastro RH: '+employees.length+' funcionário(s) disponível(is).'+(punches.length
+          ? ' '+identified+' CPF(s) identificado(s)'+(unidentified ? '; '+unidentified+' sem associação única no RH.':'.') : '');
+    }
+
+
     function cleanName(value) {
       return value.trim().replace(/\s+\d[\dA-Fa-f]*\s*$/, '').replace(/\s{2,}/g,' ').trim();
     }
@@ -323,9 +392,11 @@
         const [afdContent,dataContent]=await Promise.all([readPointFile(afd),readPointFile(data)]);
         const result=parseFiles(afdContent,dataContent);
         punches=result.records;
+        $('shiftFilter').value='';
+        syncRhEmployees();
         currentFile=[afd?.name,data?.name].filter(Boolean).join(' + ');
         $('search').value=''; $('startDate').value=''; $('endDate').value='';
-        for (const id of ['search','startDate','endDate','clearFilters']) $(id).disabled=false;
+        for (const id of ['search','startDate','endDate','shiftFilter','clearFilters']) $(id).disabled=false;
         $('totalPunches').textContent=numberFormat.format(punches.length);
         $('totalPeople').textContent=numberFormat.format(new Set(punches.map(item=>item.name)).size);
         $('totalDays').textContent=numberFormat.format(result.groups);
@@ -350,11 +421,13 @@
       const query=$('search').value.trim().toLowerCase();
       const digits=query.replace(/\D/g,'');
       const start=$('startDate').value, end=$('endDate').value;
+      const shift=$('shiftFilter').value;
       const matched=query ? new Set(punches.filter(record => record.name.toLowerCase().includes(query) ||
         record.cpf.toLowerCase().includes(query) || (digits && record.cpf.includes(digits))).map(employeeKey)) : null;
       // Como na referência, o período é aplicado quando ambas as datas são preenchidas.
       return punches.filter(record => (!matched || matched.has(employeeKey(record))) &&
-        (!(start && end) || (record.date>=start && record.date<=end)));
+        (!(start && end) || (record.date>=start && record.date<=end)) &&
+        (!shift || (shift==='__RH_UNMATCHED__' ? !record.rhMatched : record.rhShift===shift)));
     }
 
 
@@ -378,7 +451,8 @@
           entry:group.find(record=>record.kind==='Entrada')?.time || null,
           exit:group.find(record=>record.kind==='Saída')?.time || null,
           cpf:[...new Set(group.map(record=>record.cpf))].sort().join(', '),
-          name:group[0].name
+          name:group[0].name,
+          shift:groupShift(group)
         });
       }
       return rows;
@@ -387,18 +461,18 @@
     function exportTable(list,view) {
       const groups=groupPunches(list);
       if (view==='paired') return {
-        headers:['Data','Entrada','Saída','CPF','Nome'],
-        rows:pairedRows(groups).map(row=>[dateBr(row.date),row.entry || '',row.exit || '',row.cpf,row.name])
+        headers:['Data','Entrada','Saída','CPF','Nome','Turno / Setor'],
+        rows:pairedRows(groups).map(row=>[dateBr(row.date),row.entry || '',row.exit || '',row.cpf,row.name,row.shift])
       };
       if (view==='all') return {
-        headers:['Data','Nome','CPF','Hora','Tipo estimado','Origem','NSR'],
-        rows:list.map(record=>[dateBr(record.date),record.name,record.cpf,record.time,record.kind,record.origin,record.nsr])
+        headers:['Data','Nome','CPF','Turno / Setor','Hora','Tipo estimado','Origem','NSR'],
+        rows:list.map(record=>[dateBr(record.date),record.name,record.cpf,record.rhShift,record.time,record.kind,record.origin,record.nsr])
       };
       return {
-        headers:['Data','Nome','CPF','Batidas do dia','Quantidade'],
+        headers:['Data','Nome','CPF','Turno / Setor','Batidas do dia','Quantidade'],
         rows:[...groups.values()].map(group=>{
           group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
-          return [dateBr(group[0].date),group[0].name,[...new Set(group.map(record=>record.cpf))].sort().join(', '),group.map(record=>record.time+' '+record.kind).join(' | '),group.length];
+          return [dateBr(group[0].date),group[0].name,[...new Set(group.map(record=>record.cpf))].sort().join(', '),groupShift(group),group.map(record=>record.time+' '+record.kind).join(' | '),group.length];
         })
       };
     }
@@ -437,26 +511,26 @@
       empty.hidden=list.length>0; tableWrap.hidden=list.length===0;
       if (!list.length) { empty.firstElementChild.innerHTML = punches.length ? '<strong>Nenhuma batida neste filtro</strong>Altere a busca ou o período para ver outros registros.' : '<strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.'; return; }
       const header=document.createElement('tr');
-      const titles=activeView==='paired' ? ['Data','Entrada','Saída','CPF','Nome'] : activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','Origem','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
+      const titles=activeView==='paired' ? ['Data','Entrada','Saída','CPF','Nome','Turno / Setor'] : activeView==='all' ? ['Data','Funcionário / CPF','Turno / Setor','Hora','Tipo estimado','Origem','NSR'] : ['Data','Funcionário / CPF','Turno / Setor','Batidas do dia','Quantidade'];
       for (const title of titles) { const th=document.createElement('th'); th.textContent=title; header.appendChild(th); }
       head.appendChild(header);
       if (activeView==='paired') {
         for (const pair of pairedRows(groups)) {
           const row=document.createElement('tr');
           cell(row,dateBr(pair.date)); cell(row,pair.entry || '—','time'); cell(row,pair.exit || '—','time');
-          cell(row,pair.cpf); cell(row,pair.name); body.appendChild(row);
+          cell(row,pair.cpf); cell(row,pair.name); cell(row,pair.shift); body.appendChild(row);
         }
       } else if (activeView==='all') {
         for (const record of list) {
           const row=document.createElement('tr');
-          cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.time,'time');
+          cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.rhShift); cell(row,record.time,'time');
           const kind=cell(row,record.kind); kind.className=''; const badge=document.createElement('span'); badge.className='badge'+(record.kind==='Saída'?' out':''); badge.textContent=record.kind+' (estimado)'; kind.replaceChildren(badge);
           cell(row,record.origin); cell(row,record.nsr); body.appendChild(row);
         }
       } else {
         for (const group of groups.values()) {
           group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
-          const row=document.createElement('tr'); cell(row,dateBr(group[0].date)); personCell(row,group[0]);
+          const row=document.createElement('tr'); cell(row,dateBr(group[0].date)); personCell(row,group[0]); cell(row,groupShift(group));
           const td=document.createElement('td'), wrap=document.createElement('div'); wrap.className='punches';
           for (const record of group) { const chip=document.createElement('span'); chip.className='punch'+(record.kind==='Saída'?' out':''); chip.textContent=record.time+' · '+record.kind; wrap.appendChild(chip); }
           td.appendChild(wrap); row.appendChild(td); cell(row,String(group.length)); body.appendChild(row);
@@ -465,8 +539,9 @@
     }
 
     $('uploadForm').addEventListener('submit',event=>{ event.preventDefault(); loadFiles(); });
+    $('shiftFilter').addEventListener('change',render);
     for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
-    $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; render(); });
+    $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; $('shiftFilter').value=''; render(); });
     $('excelButton').addEventListener('click',exportExcel);
     $('printButton').addEventListener('click',()=>window.print());
     for (const [id,view] of [['pairedView','paired'],['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
@@ -474,6 +549,11 @@
       for (const [buttonId,buttonView] of [['pairedView','paired'],['allView','all'],['dayView','day']]) { $(buttonId).classList.toggle('active',buttonView===view); $(buttonId).setAttribute('aria-pressed',String(buttonView===view)); }
       render();
     });
+    window.addEventListener('storage',event=>{
+      if (event.key==='csva_employees_v5' || event.key===null) { syncRhEmployees(); render(); }
+    });
+    window.addEventListener('focus',()=>{ syncRhEmployees(); render(); });
+    syncRhEmployees();
   </script>
 </body>
 </html>
