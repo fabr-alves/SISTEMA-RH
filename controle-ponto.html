@@ -53,6 +53,8 @@
     .stat .number { display:block; color:#0f172a; font-size:25px; letter-spacing:-.03em; font-weight:800; margin-top:4px; }
     .stat .detail { color:#94a3b8; font-size:11px; }
     .results-panel { padding:21px; }
+    .pagination { display:flex; align-items:center; justify-content:center; gap:14px; margin-top:16px; flex-wrap:wrap; }
+    .pagination[hidden] { display:none; }
     .filters { display:grid; grid-template-columns:minmax(220px,2fr) repeat(3,minmax(145px,1fr)) auto; gap:12px; align-items:end; }
     .field label { display:block; font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.055em; margin-bottom:6px; }
     .field input,.field select { display:block; width:100%; height:41px; border:1px solid #cbd5e1; border-radius:9px; background:white; color:#0f172a; padding:0 12px; outline:none; }
@@ -95,7 +97,7 @@
     @media(max-width:950px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } .filter-actions { justify-content:flex-start; } }
     @media(max-width:700px) { .shell { padding:14px; } .hero { padding:22px; } .hero-mark { display:none; } .stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .drop { display:block; text-align:center; } .upload-icon { margin:0 auto 12px; } .drop .btn { margin-top:15px; } .section-heading,.result-bar { flex-wrap:wrap; } .privacy { white-space:normal; } }
     @media(max-width:520px) { .filters { grid-template-columns:1fr; } .filter-actions { flex-wrap:wrap; } .stats { gap:8px; } .stat { padding:12px; } .stat .number { font-size:20px; } }
-    @media print { body { background:white; } .shell { padding:0; } .hero,.upload-panel,.filters,.view-switch,.note { display:none!important; } .results-panel,.stat { box-shadow:none; } .table-wrap { overflow:visible; } table { min-width:0; } }
+    @media print { body { background:white; } .shell { padding:0; } .hero,.upload-panel,.filters,.view-switch,.note,.pagination { display:none!important; } .results-panel,.stat { box-shadow:none; } .table-wrap { overflow:visible; } table { min-width:0; } }
   </style>
 </head>
 <body>
@@ -140,6 +142,8 @@
       <div class="result-bar"><div class="result-count"><strong id="resultCount">Nenhum registro carregado</strong><span id="resultSub">Importe um TXT para visualizar as batidas.</span></div><div class="view-switch" role="group" aria-label="Visualização"><button id="pairedView" type="button" class="active" aria-pressed="true">Entrada e saída</button><button id="allView" type="button" aria-pressed="false">Todas as batidas</button><button id="dayView" type="button" aria-pressed="false">Por funcionário e dia</button></div></div>
       <div id="empty" class="empty"><div><strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.</div></div>
       <div id="tableWrap" class="table-wrap" hidden><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
+      <div id="pagination" class="pagination" hidden><button id="previousPage" type="button" class="btn secondary">Anterior</button><span id="pageStatus" role="status"></span><button id="nextPage" type="button" class="btn secondary">Próxima</button></div>
+      <p class="muted">Excel e impressão incluem todas as linhas do filtro, independentemente da página exibida.</p>
       <p class="note">ⓘ O resumo mostra a primeira entrada e a primeira saída estimadas de cada funcionário no dia, como no arquivo de referência. Todas as outras batidas permanecem disponíveis nas demais visualizações. Confira os horários com o espelho oficial do ponto antes de qualquer decisão trabalhista.</p>
     </section>
   </main>
@@ -150,6 +154,11 @@
     let punches = [];
     let currentFile = '';
     let activeView = 'paired';
+    const textCollator=new Intl.Collator('pt-BR');
+    const compareText=(a,b)=>a<b?-1:a>b?1:0;
+    let pageNumber=1, dataRevision=0, viewCache=null;
+    const PAGE_SIZE=200;
+    let rhSavedValue=undefined, lastDiagnostic=null;
     const employeeKey = record => record.name;
 
     // Lógica de ponto_web_consorcio/app.py adaptada para execução local no navegador.
@@ -162,21 +171,31 @@
       return digits || '';
     }
 
-    function matchRhEmployee(record,employees) {
-      const cpf=rhCpfKey(record.cpfRaw || record.cpf);
-      // Matrícula/id do RH não é CPF. Só campos explicitamente de CPF são usados.
-      const byCpf=cpf ? employees.filter(employee=>rhCpfKey(employee.cpf)===cpf) : [];
-      if (byCpf.length===1) return byCpf[0];
-      if (byCpf.length>1) return null;
-      if (!record.hasName) return null;
-      const name=rhNameKey(record.name);
-      const byName=employees.filter(employee=>rhNameKey(employee.name)===name);
-      if (byName.length!==1) return null;
-      const candidate=byName[0], candidateCpf=rhCpfKey(candidate.cpf);
-      // CPF conflitante impede que um homônimo receba o turno de outra pessoa.
-      if (candidateCpf && cpf && candidateCpf!==cpf) return null;
-      return candidate;
+    function buildRhIndex(employees) {
+      const byCpf=new Map(), byName=new Map();
+      function add(map,key,employee) {
+        if (!key) return;
+        // null indica mais de um cadastro com a mesma chave.
+        map.set(key,map.has(key) ? null : employee);
+      }
+      for (const employee of employees) {
+        add(byCpf,rhCpfKey(employee.cpf),employee);
+        add(byName,rhNameKey(employee.name),employee);
+      }
+      return {byCpf,byName};
     }
+
+    function matchRhEmployee(record,employeesOrIndex) {
+      const index=Array.isArray(employeesOrIndex) ? buildRhIndex(employeesOrIndex) : employeesOrIndex;
+      const cpf=rhCpfKey(record.cpfRaw || record.cpf);
+      if (cpf && index.byCpf.has(cpf)) return index.byCpf.get(cpf);
+      if (!record.hasName) return null;
+      const candidate=index.byName.get(rhNameKey(record.name));
+      if (!candidate) return null;
+      const candidateCpf=rhCpfKey(candidate.cpf);
+      return candidateCpf && cpf && candidateCpf!==cpf ? null : candidate;
+    }
+
 
     function groupShift(group) {
       return [...new Set(group.map(record=>record.rhShift || 'Não identificado no RH'))].sort().join(' / ');
@@ -184,8 +203,12 @@
 
     function syncRhEmployees() {
       let employees=[], available=false;
+      let saved=null;
+      try { saved=localStorage.getItem('csva_employees_v5'); } catch {}
+      if (saved===rhSavedValue) return false;
+      rhSavedValue=saved;
       try {
-        const saved=localStorage.getItem('csva_employees_v5');
+        // O cadastro só é relido quando muda.
         if (saved!==null) {
           const parsed=JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -194,8 +217,11 @@
           }
         }
       } catch { /* Mantém os registros de ponto mesmo sem acesso ao cadastro local. */ }
+      const index=buildRhIndex(employees), matches=new Map();
       for (const record of punches) {
-        const employee=matchRhEmployee(record,employees);
+        const key=(record.cpfRaw || record.cpf)+'|'+(record.hasName ? record.name : '');
+        if (!matches.has(key)) matches.set(key,matchRhEmployee(record,index));
+        const employee=matches.get(key);
         record.rhMatched=!!employee;
         record.rhShift=employee ? String(employee.shift || 'Geral').trim() || 'Geral' : 'Não identificado no RH';
       }
@@ -217,6 +243,8 @@
         ? 'Abra o SISTEMA-RH neste navegador e carregue o cadastro de funcionários para identificar os turnos automaticamente.'
         : 'Turnos do cadastro RH: '+employees.length+' funcionário(s) disponível(is).'+(punches.length
           ? ' '+identified+' CPF(s) identificado(s)'+(unidentified ? '; '+unidentified+' sem associação única no RH.':'.') : '');
+      dataRevision++; viewCache=null;
+      return true;
     }
 
 
@@ -325,7 +353,7 @@
         groups.get(key).push(item);
       }
       for (const group of groups.values()) {
-        group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+        group.sort((a,b)=>compareText(a.timestamp,b.timestamp));
         group.forEach((item,index)=>{
           item.sequence=index+1;
           item.kind=group.length===1 ? (item.time<'12:00:00' ? 'Entrada':'Saída') : (index%2 ? 'Saída':'Entrada');
@@ -340,8 +368,57 @@
           diagnostic.tipo5_nao_casados.push(item);
         }
       }
-      records.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.name.localeCompare(b.name,'pt-BR'));
+      records.sort((a,b)=>compareText(a.timestamp,b.timestamp) || textCollator.compare(a.name,b.name));
       return { records, stats, diagnostic, groups:groups.size };
+    }
+
+
+    function runBackground(task,payload) {
+      return new Promise((resolve,reject)=>{
+        const declarations=[cleanName,cpfKeys,splitLines,isValidTimestamp,parseFiles,readPointFile,
+          dateBr,employeeKey,groupShift,groupPunches,pairedRows,exportTable,csvCell,compareText]
+          .map(fn=>fn.name ? fn.toString() : '').join('\n');
+        // Arrow functions precisam de declaração explícita no script do worker.
+        const source=declarations.replace(employeeKey.toString(),'const employeeKey='+employeeKey.toString()+';')
+          .replace(compareText.toString(),'const compareText='+compareText.toString()+';')+
+          '\nconst textCollator=new Intl.Collator("pt-BR");\n'+
+          'self.onmessage='+workerTask.toString()+';';
+        const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+        let worker;
+        function cleanup(){if(worker)worker.terminate();URL.revokeObjectURL(url);}
+        try {
+          worker=new Worker(url);
+          worker.onmessage=event=>{
+            const message=event.data;
+            if(message.progress) { if(task==='parse')setStatus(message.progress); return; }
+            cleanup();
+            if(message.error)reject(new Error(message.error));else resolve(message.result);
+          };
+          worker.onerror=()=>{cleanup();reject(new Error('Falha no processamento em segundo plano. Recarregue a página e tente novamente.'));};
+          worker.postMessage({task,payload});
+        } catch(error){cleanup();reject(error);}
+      });
+    }
+
+    async function workerTask(event) {
+      try {
+        const {task,payload}=event.data;
+        let result;
+        if(task==='parse') {
+          self.postMessage({progress:'Lendo os arquivos em segundo plano...'});
+          const [afd,data]=await Promise.all([readPointFile(payload.afd),readPointFile(payload.data)]);
+          self.postMessage({progress:'Organizando as batidas em segundo plano...'});
+          result=parseFiles(afd,data);
+        } else {
+          const table=exportTable(payload.records,payload.view);
+          if(task==='csv') {
+            const chunks=['\uFEFF',table.headers.map(csvCell).join(';')];
+            for(const row of table.rows)chunks.push('\r\n'+row.map(csvCell).join(';'));
+            result=new Blob(chunks,{type:'text/csv;charset=utf-8'});
+          } else result=table;
+        }
+        self.postMessage({result});
+      } catch(error){self.postMessage({error:error.message || 'Não foi possível processar os arquivos.'});}
     }
 
 
@@ -372,13 +449,15 @@
       $('diagnosticSummary').textContent=stats.tipo5_encontradas+' registros tipo 5 ('+stats.tipo5_ignoradas+
         ' ignorados) · '+stats.tipo3_ignoradas+' registros tipo 3 fora do padrão · '+
         diagnostic.tipo5_nao_casados.length+' funcionário(s) cadastrado(s) sem batida.';
-      const orphans=records.filter(item=>!item.hasName);
-      const lines=['Cadastros AFD: '+diagnostic.tipo5_cpfs.length];
-      for (const item of diagnostic.tipo5_cpfs) lines.push(item.cpf_raw+' → '+item.nome);
+      const orphans=[];
+      let orphanCount=0;
+      for (const item of records) if (!item.hasName) { orphanCount++; if (orphans.length<200) orphans.push(item); }
+      const lines=['Cadastros AFD: '+diagnostic.tipo5_cpfs.length+' (até 200 exibidos)'];
+      for (const item of diagnostic.tipo5_cpfs.slice(0,200)) lines.push(item.cpf_raw+' → '+item.nome);
       lines.push('\nFuncionários cadastrados sem batida:');
-      for (const item of diagnostic.tipo5_nao_casados) lines.push(item.cpf_raw+' → '+item.nome);
+      for (const item of diagnostic.tipo5_nao_casados.slice(0,200)) lines.push(item.cpf_raw+' → '+item.nome);
       if (!diagnostic.tipo5_nao_casados.length) lines.push('Nenhum.');
-      lines.push('\nBatidas sem nome: '+orphans.length+' (até 200 exibidas)');
+      lines.push('\nBatidas sem nome: '+orphanCount+' (até 200 exibidas)');
       for (const item of orphans.slice(0,200)) lines.push(item.cpf+' · '+dateBr(item.date)+' '+item.time+' · '+item.origin);
       $('diagnosticContent').textContent=lines.join('\n');
     }
@@ -389,19 +468,21 @@
       $('processFiles').disabled=true;
       setStatus('Lendo e organizando os arquivos...');
       try {
-        const [afdContent,dataContent]=await Promise.all([readPointFile(afd),readPointFile(data)]);
-        const result=parseFiles(afdContent,dataContent);
+        const result=await runBackground('parse',{afd,data});
+        setStatus('Preparando a consulta...');
+        await new Promise(resolve=>setTimeout(resolve,0));
         punches=result.records;
         $('shiftFilter').value='';
+        rhSavedValue=undefined;
         syncRhEmployees();
+        pageNumber=1;
         currentFile=[afd?.name,data?.name].filter(Boolean).join(' + ');
         $('search').value=''; $('startDate').value=''; $('endDate').value='';
         for (const id of ['search','startDate','endDate','shiftFilter','clearFilters']) $(id).disabled=false;
         $('totalPunches').textContent=numberFormat.format(punches.length);
         $('totalPeople').textContent=numberFormat.format(new Set(punches.map(item=>item.name)).size);
         $('totalDays').textContent=numberFormat.format(result.groups);
-        const dates=punches.map(item=>item.date).sort();
-        $('period').textContent=dates.length ? dateBr(dates[0])+' – '+dateBr(dates[dates.length-1]) : '—';
+        $('period').textContent=punches.length ? dateBr(punches[0].date)+' – '+dateBr(punches[punches.length-1].date) : '—';
         $('fileSummary').textContent=currentFile;
         const s=result.stats;
         let message=s.linhas_total+' linhas · '+s.tipo5_encontradas+' tipo 5 ('+s.tipo5_ignoradas+
@@ -410,7 +491,10 @@
         if (s.tipo3_sem_nome) message+=' · '+s.tipo3_sem_nome+' SEM NOME';
         if (!punches.length) message+=' · Nenhuma batida válida encontrada'+(data ? ' no DATA selecionado. O AFD foi usado somente para nomes.':'.');
         setStatus(message,punches.length ? 'success':'error');
-        showDiagnostics(result);
+        lastDiagnostic=result;
+        $('diagnostics').hidden=false;
+        $('diagnosticContent').textContent='Abra o diagnóstico para consultar os detalhes.';
+        if ($('diagnostics').open) showDiagnostics(result);
         render();
       } catch(error) {
         setStatus('Não foi possível processar: '+error.message+' A consulta anterior foi mantida.','error');
@@ -443,9 +527,9 @@
 
     function pairedRows(groups) {
       const rows=[];
-      const orderedGroups=[...groups.values()].sort((a,b)=>a[0].date.localeCompare(b[0].date) || a[0].name.localeCompare(b[0].name,'pt-BR') || a[0].cpf.localeCompare(b[0].cpf));
+      const orderedGroups=[...groups.values()].sort((a,b)=>compareText(a[0].date,b[0].date) || textCollator.compare(a[0].name,b[0].name) || compareText(a[0].cpf,b[0].cpf));
       for (const group of orderedGroups) {
-        group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
+        group.sort((a,b)=>compareText(a.timestamp,b.timestamp) || compareText(a.nsr,b.nsr));
         rows.push({
           date:group[0].date,
           entry:group.find(record=>record.kind==='Entrada')?.time || null,
@@ -471,7 +555,7 @@
       return {
         headers:['Data','Nome','CPF','Turno / Setor','Batidas do dia','Quantidade'],
         rows:[...groups.values()].map(group=>{
-          group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
+          group.sort((a,b)=>compareText(a.timestamp,b.timestamp) || compareText(a.nsr,b.nsr));
           return [dateBr(group[0].date),group[0].name,[...new Set(group.map(record=>record.cpf))].sort().join(', '),groupShift(group),group.map(record=>record.time+' '+record.kind).join(' | '),group.length];
         })
       };
@@ -483,24 +567,83 @@
       return '"'+text.replace(/"/g,'""')+'"';
     }
 
-    function exportExcel() {
-      const list=filteredPunches();
-      if (!list.length) return;
-      const {headers,rows}=exportTable(list,activeView);
-      const csv='\uFEFF'+[headers,...rows].map(row=>row.map(csvCell).join(';')).join('\r\n');
-      const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-      const link=document.createElement('a');
-      link.href=url;
-      link.download='Controle_Ponto_'+activeView+'_'+new Date().toISOString().slice(0,10)+'.csv';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
+    function getViewModel() {
+      const key=JSON.stringify([dataRevision,activeView,$('search').value,$('startDate').value,$('endDate').value,$('shiftFilter').value]);
+      if(viewCache && viewCache.key===key)return viewCache;
+      const list=filteredPunches(), groups=groupPunches(list);
+      const rows=activeView==='paired' ? pairedRows(groups) : activeView==='all' ? list : [...groups.values()];
+      viewCache={key,list,groups,rows};
+      return viewCache;
     }
 
-    function render() {
+    async function exportExcel() {
       const list=filteredPunches();
-      const groups=groupPunches(list);
+      if(!list.length)return;
+      const view=activeView;
+      $('excelButton').disabled=true;
+      try {
+        const csv=await runBackground('csv',{records:list,view});
+        const url=URL.createObjectURL(csv), link=document.createElement('a');
+        link.href=url;
+        link.download='Controle_Ponto_'+view+'_'+new Date().toISOString().slice(0,10)+'.csv';
+        document.body.appendChild(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+      } catch(error){setStatus('Erro ao exportar: '+error.message,'error');}
+      finally{$('excelButton').disabled=!filteredPunches().length;}
+    }
+
+    async function printAll() {
+      const list=filteredPunches();
+      if(!list.length)return;
+      $('printButton').disabled=true;
+      $('printButton').textContent='Preparando relatório...';
+      let frame;
+      try {
+        const table=await runBackground('table',{records:list,view:activeView});
+        frame=document.createElement('iframe');
+        frame.style.cssText='position:fixed;width:0;height:0;border:0;left:-9999px';
+        frame.title='Relatório completo de ponto';
+        document.body.appendChild(frame);
+        const doc=frame.contentDocument;
+        doc.open();
+        doc.write('<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Ponto</title><style>body{font:11px Arial}table{width:100%;border-collapse:collapse}td,th{padding:5px;border:1px solid #bbb;text-align:left}thead{display:table-header-group}tr{break-inside:avoid}</style></head><body><h1>Relatório de Ponto</h1><p></p><table><thead></thead><tbody></tbody></table></body></html>');
+        doc.close();
+        doc.querySelector('p').textContent=currentFile+' · '+table.rows.length+' linha(s) · '+new Date().toLocaleString('pt-BR');
+        const head=doc.createElement('tr');
+        for(const label of table.headers){const th=doc.createElement('th');th.textContent=label;head.appendChild(th);}
+        doc.querySelector('thead').appendChild(head);
+        const body=doc.querySelector('tbody');
+        // Monta o relatório completo em blocos para permitir que a tela responda.
+        for(let i=0;i<table.rows.length;i+=200) {
+          const fragment=doc.createDocumentFragment();
+          for(const values of table.rows.slice(i,i+200)) {
+            const row=doc.createElement('tr');
+            for(const value of values){const td=doc.createElement('td');td.textContent=value??'';row.appendChild(td);}
+            fragment.appendChild(row);
+          }
+          body.appendChild(fragment);
+          await new Promise(resolve=>setTimeout(resolve,0));
+        }
+        const reportFrame=frame;
+        frame.contentWindow.addEventListener('afterprint',()=>reportFrame.remove(),{once:true});
+        frame.contentWindow.focus();frame.contentWindow.print();
+        // Alguns navegadores não emitem afterprint; remove o frame no próximo relatório.
+        document.querySelectorAll('iframe[data-point-report]').forEach(old=>old.remove());
+        frame.dataset.pointReport='true';
+      } catch(error){if(frame)frame.remove();setStatus('Erro ao preparar impressão: '+error.message,'error');}
+      finally{$('printButton').textContent='Imprimir / PDF';$('printButton').disabled=!filteredPunches().length;}
+    }
+
+
+    function render() {
+      const model=getViewModel(), list=model.list, groups=model.groups;
+      const totalRows=model.rows.length;
+      pageNumber=Math.min(pageNumber,Math.max(1,Math.ceil(totalRows/PAGE_SIZE)));
+      const visible=model.rows.slice((pageNumber-1)*PAGE_SIZE,pageNumber*PAGE_SIZE);
+      $('pagination').hidden=!totalRows;
+      $('pageStatus').textContent='Página '+pageNumber+' de '+Math.max(1,Math.ceil(totalRows/PAGE_SIZE))+' · '+numberFormat.format(totalRows)+' linha(s) · '+PAGE_SIZE+' por página';
+      $('previousPage').disabled=pageNumber<=1;
+      $('nextPage').disabled=pageNumber*PAGE_SIZE>=totalRows;
       $('excelButton').disabled=list.length===0;
       $('printButton').disabled=list.length===0;
       $('resultCount').textContent=numberFormat.format(list.length) + (list.length===1 ? ' batida encontrada' : ' batidas encontradas');
@@ -515,44 +658,51 @@
       for (const title of titles) { const th=document.createElement('th'); th.textContent=title; header.appendChild(th); }
       head.appendChild(header);
       if (activeView==='paired') {
-        for (const pair of pairedRows(groups)) {
+        for (const pair of visible) {
           const row=document.createElement('tr');
           cell(row,dateBr(pair.date)); cell(row,pair.entry || '—','time'); cell(row,pair.exit || '—','time');
           cell(row,pair.cpf); cell(row,pair.name); cell(row,pair.shift); body.appendChild(row);
         }
       } else if (activeView==='all') {
-        for (const record of list) {
+        for (const record of visible) {
           const row=document.createElement('tr');
           cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.rhShift); cell(row,record.time,'time');
           const kind=cell(row,record.kind); kind.className=''; const badge=document.createElement('span'); badge.className='badge'+(record.kind==='Saída'?' out':''); badge.textContent=record.kind+' (estimado)'; kind.replaceChildren(badge);
           cell(row,record.origin); cell(row,record.nsr); body.appendChild(row);
         }
       } else {
-        for (const group of groups.values()) {
-          group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+        for (const group of visible) {
+          group.sort((a,b)=>compareText(a.timestamp,b.timestamp));
           const row=document.createElement('tr'); cell(row,dateBr(group[0].date)); personCell(row,group[0]); cell(row,groupShift(group));
           const td=document.createElement('td'), wrap=document.createElement('div'); wrap.className='punches';
-          for (const record of group) { const chip=document.createElement('span'); chip.className='punch'+(record.kind==='Saída'?' out':''); chip.textContent=record.time+' · '+record.kind; wrap.appendChild(chip); }
+          for (const record of group.slice(0,40)) { const chip=document.createElement('span'); chip.className='punch'+(record.kind==='Saída'?' out':''); chip.textContent=record.time+' · '+record.kind; wrap.appendChild(chip); }
+          if (group.length>40) { const more=document.createElement('span'); more.textContent='Mais '+(group.length-40)+' batidas. Consulte Todas as batidas ou exporte o relatório completo.'; wrap.appendChild(more); }
           td.appendChild(wrap); row.appendChild(td); cell(row,String(group.length)); body.appendChild(row);
         }
       }
     }
 
     $('uploadForm').addEventListener('submit',event=>{ event.preventDefault(); loadFiles(); });
-    $('shiftFilter').addEventListener('change',render);
-    for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
-    $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; $('shiftFilter').value=''; render(); });
+    $('previousPage').addEventListener('click',()=>{ pageNumber--; render(); });
+    $('nextPage').addEventListener('click',()=>{ pageNumber++; render(); });
+    $('diagnostics').addEventListener('toggle',()=>{ if ($('diagnostics').open && lastDiagnostic) showDiagnostics(lastDiagnostic); });
+    const resetPage=()=>{pageNumber=1;render();};
+    $('shiftFilter').addEventListener('change',resetPage);
+    let searchTimer;
+    $('search').addEventListener('input',()=>{clearTimeout(searchTimer); searchTimer=setTimeout(resetPage,180);});
+    for (const id of ['startDate','endDate']) $(id).addEventListener('input',resetPage);
+    $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; $('shiftFilter').value=''; resetPage(); });
     $('excelButton').addEventListener('click',exportExcel);
-    $('printButton').addEventListener('click',()=>window.print());
+    $('printButton').addEventListener('click',printAll);
     for (const [id,view] of [['pairedView','paired'],['allView','all'],['dayView','day']]) $(id).addEventListener('click',()=>{
-      activeView=view;
+      activeView=view; pageNumber=1;
       for (const [buttonId,buttonView] of [['pairedView','paired'],['allView','all'],['dayView','day']]) { $(buttonId).classList.toggle('active',buttonView===view); $(buttonId).setAttribute('aria-pressed',String(buttonView===view)); }
       render();
     });
     window.addEventListener('storage',event=>{
-      if (event.key==='csva_employees_v5' || event.key===null) { syncRhEmployees(); render(); }
+      if (event.key==='csva_employees_v5' || event.key===null) { if (syncRhEmployees()) {pageNumber=1;render();} }
     });
-    window.addEventListener('focus',()=>{ syncRhEmployees(); render(); });
+    window.addEventListener('focus',()=>{ if (syncRhEmployees()) {pageNumber=1;render();} });
     syncRhEmployees();
   </script>
 </body>
