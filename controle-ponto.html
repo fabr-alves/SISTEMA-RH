@@ -23,6 +23,12 @@
     h2 { font-size:17px; letter-spacing:-.015em; margin:0; }
     .muted { color:#64748b; font-size:13px; margin:4px 0 0; }
     .privacy { font-size:12px; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:999px; padding:5px 10px; white-space:nowrap; }
+    .upload-files { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin-bottom:18px; }
+    .upload-files input { height:auto; min-height:41px; padding:8px; }
+    #diagnostics { margin-top:16px; }
+    #diagnostics summary { cursor:pointer; font-weight:700; }
+    #diagnosticContent { max-height:300px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 system-ui,sans-serif; }
+    @media(max-width:650px) { .upload-files { grid-template-columns:1fr; } }
     .drop { border:1.5px dashed #aac2ec; background:#f8fbff; border-radius:14px; min-height:130px; display:flex; align-items:center; justify-content:center; gap:22px; padding:20px; transition:.15s; }
     .drop.dragging { border-color:var(--blue); background:#eff6ff; }
     .upload-icon { width:54px; height:54px; flex:none; border-radius:15px; display:grid; place-items:center; background:#dbeafe; color:#1d4ed8; font-size:27px; }
@@ -95,24 +101,28 @@
 <body>
   <main class="shell">
     <header class="hero">
-      <div><div class="eyebrow">Gestão operacional · CSVA RH</div><h1>Controle de Ponto</h1><p>Importe o TXT do relógio de ponto para consultar todas as batidas por funcionário e período.</p></div>
+      <div><div class="eyebrow">Gestão operacional · CSVA RH</div><h1>Controle de Ponto</h1><p>Importe os arquivos AFD e DATA para consultar as batidas por funcionário e período.</p></div>
       <div class="hero-mark" aria-hidden="true">◷</div>
     </header>
 
     <section class="panel upload-panel" aria-labelledby="upload-heading">
-      <div class="section-heading"><div><h2 id="upload-heading">Importar arquivo de ponto</h2><p class="muted">Formato AFD em TXT: registros tipo 5 identificam funcionários e tipo 3 contêm as batidas.</p></div><span class="privacy">✓ Processado somente neste navegador</span></div>
-      <div class="drop" id="dropZone">
-        <div class="upload-icon" aria-hidden="true">⇧</div>
-        <div class="drop-copy"><strong>Arraste o arquivo TXT aqui ou escolha no computador</strong><span>Uma nova importação substitui apenas os dados desta consulta. Nenhum arquivo é enviado à nuvem.</span></div>
-        <button class="btn primary" id="selectFile" type="button">Selecionar TXT</button>
-        <input id="fileInput" type="file" accept=".txt,text/plain" hidden>
-      </div>
-      <p id="status" class="status" role="status" aria-live="polite">Aguardando arquivo de ponto.</p>
+      <div class="section-heading"><div><h2 id="upload-heading">Importar arquivos de ponto</h2><p class="muted">AFD fornece os nomes. Quando DATA é selecionado, as batidas vêm somente dele. Sem DATA, são usadas as batidas do AFD.</p></div><span class="privacy">✓ Processado somente neste navegador</span></div>
+      <form id="uploadForm">
+        <div class="upload-files">
+          <div class="field"><label for="afdFile">Arquivo AFD (.txt)</label><input id="afdFile" type="file" accept=".txt,text/plain"><p class="muted">Cadastro de funcionários e, sem DATA, batidas tipo 3.</p></div>
+          <div class="field"><label for="dataFile">Arquivo DATA (.txt)</label><input id="dataFile" type="file" accept=".txt,text/plain"><p class="muted">Batidas com CPF, data e hora. Pode ser importado sozinho.</p></div>
+        </div>
+        <button class="btn primary" id="processFiles" type="submit">Processar arquivos</button>
+        <p class="muted">Uma nova importação substitui esta consulta. Os dados não são enviados à nuvem e são descartados ao recarregar a página.</p>
+      </form>
+      <p id="status" class="status" role="status" aria-live="polite">Selecione ao menos um arquivo AFD ou DATA.</p>
+      <details id="diagnostics" hidden><summary>Diagnóstico da importação</summary><p id="diagnosticSummary" class="muted"></p><pre id="diagnosticContent"></pre></details>
+
     </section>
 
     <section class="stats" aria-label="Resumo do arquivo">
       <div class="panel stat"><span class="label">Batidas únicas</span><strong class="number" id="totalPunches">—</strong><span class="detail">Após remover registros repetidos</span></div>
-      <div class="panel stat"><span class="label">Funcionários</span><strong class="number" id="totalPeople">—</strong><span class="detail">CPFs com batidas no arquivo</span></div>
+      <div class="panel stat"><span class="label">Funcionários</span><strong class="number" id="totalPeople">—</strong><span class="detail">Nomes com batidas nos arquivos</span></div>
       <div class="panel stat"><span class="label">Dias com registros</span><strong class="number" id="totalDays">—</strong><span class="detail">Funcionário + data</span></div>
       <div class="panel stat"><span class="label">Período encontrado</span><strong class="number" id="period" style="font-size:16px;padding-top:8px">—</strong><span class="detail" id="fileSummary">Nenhum TXT importado</span></div>
     </section>
@@ -138,64 +148,133 @@
     let punches = [];
     let currentFile = '';
     let activeView = 'paired';
-    const employeeKey = record => record.name === 'Não informado' ? 'cpf:' + record.cpf : 'nome:' + record.name;
+    const employeeKey = record => record.name;
 
-    // Adaptado do leitor AFD em E:\\ponto_web_consorcio\\app.py, sem servidor.
-    function parseAfd(content) {
-      const lines = content.split(/\r\n|\n|\r/);
-      const type5 = /^\d{9}5\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}[IA]?(\d{12})(.{1,52})/;
-      const type3 = /^(\d{9})3(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})[+-]\d{4}\s*[IA]?\s*(\d{10,14})/;
-      const names = new Map();
-      const stats = { lines:lines.length, type5:0, type3:0, invalidType3:0, invalidDate:0, duplicates:0 };
-      const normalizeCpf = value => value.replace(/^0+/, '') || '0';
-      for (const line of lines) {
-        const match = type5.exec(line);
-        if (!match) continue;
-        stats.type5++;
-        const name = match[2].trim().replace(/\s*\d+\s*$/, '').trim();
-        if (name && !names.has(normalizeCpf(match[1]))) names.set(normalizeCpf(match[1]), name);
-      }
-      const seen = new Set();
-      const records = [];
-      for (const line of lines) {
-        const match = type3.exec(line);
-        if (!match) {
-          if (/^\d{9}3/.test(line)) stats.invalidType3++;
-          continue;
-        }
-        stats.type3++;
-        const timestamp = match[2];
-        if (!isValidTimestamp(timestamp)) { stats.invalidDate++; continue; }
-        const cpf = normalizeCpf(match[3]);
-        const name = names.get(cpf) || 'Não informado';
-        const key = employeeKey({ cpf, name }) + '|' + timestamp;
-        if (seen.has(key)) { stats.duplicates++; continue; }
-        seen.add(key);
-        records.push({ nsr:match[1], date:timestamp.slice(0,10), time:timestamp.slice(11), timestamp, cpf, name, sequence:0, kind:'' });
-      }
-      const groups = new Map();
-      for (const record of records) {
-        const key = employeeKey(record) + '|' + record.date;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(record);
-      }
-      for (const group of groups.values()) {
-        group.sort((a,b) => a.timestamp.localeCompare(b.timestamp) || a.nsr.localeCompare(b.nsr));
-        group.forEach((record,index) => {
-          record.sequence = index + 1;
-          record.kind = group.length === 1 ? (record.time < '12:00:00' ? 'Entrada' : 'Saída') : (index % 2 ? 'Saída' : 'Entrada');
-        });
-      }
-      records.sort((a,b) => b.timestamp.localeCompare(a.timestamp) || a.name.localeCompare(b.name,'pt-BR') || a.nsr.localeCompare(b.nsr));
-      return { records, stats, groups:groups.size };
+    // Lógica de ponto_web_consorcio/app.py adaptada para execução local no navegador.
+    function cleanName(value) {
+      return value.trim().replace(/\s+\d[\dA-Fa-f]*\s*$/, '').replace(/\s{2,}/g,' ').trim();
+    }
+
+    function cpfKeys(value) {
+      const digits = value.replace(/\D/g,'');
+      if (!digits) return [];
+      const keys = new Set([digits, digits.replace(/^0+/,'') || digits]);
+      for (const size of [11,10,9]) if (digits.length >= size) keys.add(digits.slice(-size));
+      if (digits.length <= 12) keys.add(digits.padStart(12,'0'));
+      return [...keys];
+    }
+
+    function splitLines(content) {
+      if (!content) return [];
+      const lines = content.split(/\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/);
+      if (lines[lines.length-1] === '') lines.pop();
+      return lines;
     }
 
     function isValidTimestamp(value) {
-      const year = +value.slice(0,4), month = +value.slice(5,7), day = +value.slice(8,10);
-      const hour = +value.slice(11,13), minute = +value.slice(14,16), second = +value.slice(17,19);
-      const check = new Date(Date.UTC(year, month - 1, day));
-      return year >= 1900 && year <= 9999 && check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day && hour <= 23 && minute <= 59 && second <= 59;
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(value);
+      if (!match) return false;
+      const [,year,month,day,hour,minute,second] = match.map(Number);
+      const check = new Date(0);
+      check.setUTCFullYear(year,month-1,day);
+      return year >= 1 && year <= 9999 && check.getUTCFullYear() === year &&
+        check.getUTCMonth() === month-1 && check.getUTCDate() === day &&
+        hour <= 23 && minute <= 59 && second <= 59;
     }
+
+    function parseFiles(afdContent, dataContent) {
+      const names = new Map();
+      const stats = {
+        linhas_total:0, tipo5_encontradas:0, tipo5_ignoradas:0,
+        tipo3_encontradas:0, tipo3_ignoradas:0, tipo3_sem_nome:0,
+        batidas_unicas:0, origem_afd:0, origem_data:0
+      };
+      const diagnostic = { tipo5_cpfs:[], tipo5_nao_casados:[] };
+      const normalizeCpf = value => value.replace(/\D/g,'').replace(/^0+/,'') || value;
+      function record(cpfRaw,timestamp,origin,nsr='') {
+        const name = cpfKeys(cpfRaw).map(key=>names.get(key)).find(Boolean) || '';
+        const cpf = normalizeCpf(cpfRaw);
+        return { cpfRaw, cpf, timestamp, date:timestamp.slice(0,10), time:timestamp.slice(11),
+          name:name || '[SEM NOME - CPF '+cpf+']', hasName:!!name, origin, nsr, sequence:0, kind:'' };
+      }
+      let afdRecords = [], dataRecords = [];
+      if (afdContent !== null) {
+        const lines = splitLines(afdContent);
+        stats.linhas_total += lines.length;
+        const type5 = /^\d{9}5\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}[IA]?(\d{11,14})/;
+        for (const line of lines) {
+          if (!/^\d{9}5/.test(line)) continue;
+          stats.tipo5_encontradas++;
+          const match = type5.exec(line);
+          if (!match) { stats.tipo5_ignoradas++; continue; }
+          const name = cleanName(line.slice(match[0].length,match[0].length+52));
+          if (!name) { stats.tipo5_ignoradas++; continue; }
+          for (const key of cpfKeys(match[1])) if (!names.has(key)) names.set(key,name);
+          diagnostic.tipo5_cpfs.push({ cpf_raw:match[1], cpf_norm:normalizeCpf(match[1]), nome:name });
+        }
+        // A presença de DATA desativa as batidas AFD, inclusive se DATA estiver vazio.
+        if (dataContent === null) {
+          const type3 = /^(\d{9})3(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})[+-]\d{4}\s*[IA]?\s*(\d{10,14})/;
+          for (const line of lines) {
+            if (!/^\d{9}3/.test(line)) continue;
+            const match = type3.exec(line);
+            if (!match) { stats.tipo3_ignoradas++; continue; }
+            stats.tipo3_encontradas++;
+            if (!isValidTimestamp(match[2])) continue;
+            afdRecords.push(record(match[3],match[2],'AFD',match[1]));
+          }
+        }
+        stats.origem_afd = afdRecords.length;
+      }
+      if (dataContent !== null) {
+        const lines = splitLines(dataContent);
+        stats.linhas_total += lines.length;
+        const dataPattern = /^\d{17}(\d{12})\d{9}(\d{2})(\d{2})(\d{4})(\d{2})(\d{2})/;
+        for (const line of lines) {
+          const match = dataPattern.exec(line);
+          if (!match) continue;
+          const timestamp = match[4]+'-'+match[3]+'-'+match[2]+'T'+match[5]+':'+match[6]+':00';
+          if (!isValidTimestamp(timestamp)) continue;
+          stats.tipo3_encontradas++;
+          dataRecords.push(record(match[1],timestamp,'DATA'));
+        }
+        stats.origem_data = dataRecords.length;
+      }
+      const source = dataRecords.length ? dataRecords : afdRecords;
+      stats.tipo3_sem_nome = source.filter(item=>!item.hasName).length;
+      const seen = new Set(), records = [];
+      for (const item of source) {
+        const key = item.cpfRaw+'|'+item.timestamp;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        records.push(item);
+      }
+      const groups = new Map();
+      for (const item of records) {
+        const key = JSON.stringify([item.name,item.date]);
+        if (!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(item);
+      }
+      for (const group of groups.values()) {
+        group.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+        group.forEach((item,index)=>{
+          item.sequence=index+1;
+          item.kind=group.length===1 ? (item.time<'12:00:00' ? 'Entrada':'Saída') : (index%2 ? 'Saída':'Entrada');
+        });
+      }
+      stats.batidas_unicas=records.length;
+      const namesWithPunches = new Set(records.filter(item=>item.hasName).map(item=>item.name));
+      const missing = new Set();
+      for (const item of diagnostic.tipo5_cpfs) {
+        if (!namesWithPunches.has(item.nome) && !missing.has(item.nome)) {
+          missing.add(item.nome);
+          diagnostic.tipo5_nao_casados.push(item);
+        }
+      }
+      records.sort((a,b)=>a.timestamp.localeCompare(b.timestamp) || a.name.localeCompare(b.name,'pt-BR'));
+      return { records, stats, diagnostic, groups:groups.size };
+    }
+
 
     function dateBr(value) { return value.slice(8,10) + '/' + value.slice(5,7) + '/' + value.slice(0,4); }
     function normalizedSearch(value) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -208,45 +287,76 @@
     }
     function setStatus(message,type='') { $('status').textContent=message; $('status').className='status ' + type; }
 
-    async function loadFile(file) {
-      if (!file) return;
-      if (!/\.txt$/i.test(file.name)) { setStatus('Selecione um arquivo com extensão .txt.','error'); return; }
-      if (file.size > 50 * 1024 * 1024) { setStatus('O arquivo excede 50 MB. Divida o TXT para consultar neste navegador.','error'); return; }
-      setStatus('Lendo e organizando as batidas de ' + file.name + '...');
+    async function readPointFile(file) {
+      if (!file) return null;
+      if (!/\.txt$/i.test(file.name)) throw new Error('Selecione arquivos com extensão .txt.');
+      if (file.size>50*1024*1024) throw new Error('Cada arquivo deve ter no máximo 50 MB.');
+      const bytes=await file.arrayBuffer();
+      // O aplicativo de referência lê Latin-1; UTF-8 válido também é aceito.
+      try { return new TextDecoder('utf-8',{fatal:true}).decode(bytes); }
+      catch { return new TextDecoder('iso-8859-1').decode(bytes); }
+    }
+
+    function showDiagnostics(result) {
+      const { stats,diagnostic,records }=result;
+      $('diagnostics').hidden=false;
+      $('diagnosticSummary').textContent=stats.tipo5_encontradas+' registros tipo 5 ('+stats.tipo5_ignoradas+
+        ' ignorados) · '+stats.tipo3_ignoradas+' registros tipo 3 fora do padrão · '+
+        diagnostic.tipo5_nao_casados.length+' funcionário(s) cadastrado(s) sem batida.';
+      const orphans=records.filter(item=>!item.hasName);
+      const lines=['Cadastros AFD: '+diagnostic.tipo5_cpfs.length];
+      for (const item of diagnostic.tipo5_cpfs) lines.push(item.cpf_raw+' → '+item.nome);
+      lines.push('\nFuncionários cadastrados sem batida:');
+      for (const item of diagnostic.tipo5_nao_casados) lines.push(item.cpf_raw+' → '+item.nome);
+      if (!diagnostic.tipo5_nao_casados.length) lines.push('Nenhum.');
+      lines.push('\nBatidas sem nome: '+orphans.length+' (até 200 exibidas)');
+      for (const item of orphans.slice(0,200)) lines.push(item.cpf+' · '+dateBr(item.date)+' '+item.time+' · '+item.origin);
+      $('diagnosticContent').textContent=lines.join('\n');
+    }
+
+    async function loadFiles() {
+      const afd=$('afdFile').files[0], data=$('dataFile').files[0];
+      if (!afd && !data) { setStatus('Envie ao menos um arquivo (AFD ou DATA).','error'); return; }
+      $('processFiles').disabled=true;
+      setStatus('Lendo e organizando os arquivos...');
       try {
-        const bytes = await file.arrayBuffer();
-        let content;
-        try { content = new TextDecoder('utf-8',{fatal:true}).decode(bytes); }
-        catch { content = new TextDecoder('iso-8859-1').decode(bytes); }
-        const result = parseAfd(content);
-        if (!result.records.length) { setStatus('Nenhuma batida AFD tipo 3 válida encontrada. Confira se este TXT segue o formato do arquivo de referência.','error'); return; }
-        punches = result.records;
-        currentFile = file.name;
+        const [afdContent,dataContent]=await Promise.all([readPointFile(afd),readPointFile(data)]);
+        const result=parseFiles(afdContent,dataContent);
+        punches=result.records;
+        currentFile=[afd?.name,data?.name].filter(Boolean).join(' + ');
         $('search').value=''; $('startDate').value=''; $('endDate').value='';
-        for (const id of ['search','startDate','endDate','clearFilters','printButton']) $(id).disabled=false;
+        for (const id of ['search','startDate','endDate','clearFilters']) $(id).disabled=false;
         $('totalPunches').textContent=numberFormat.format(punches.length);
-        $('totalPeople').textContent=numberFormat.format(new Set(punches.map(item=>item.cpf)).size);
+        $('totalPeople').textContent=numberFormat.format(new Set(punches.map(item=>item.name)).size);
         $('totalDays').textContent=numberFormat.format(result.groups);
         const dates=punches.map(item=>item.date).sort();
-        $('period').textContent=dateBr(dates[0]) + ' – ' + dateBr(dates[dates.length-1]);
-        $('fileSummary').textContent=file.name;
-        const warnings=[];
-        if (result.stats.invalidType3) warnings.push(result.stats.invalidType3 + ' linha(s) tipo 3 fora do padrão');
-        if (result.stats.invalidDate) warnings.push(result.stats.invalidDate + ' data(s) inválida(s)');
-        if (result.stats.duplicates) warnings.push(result.stats.duplicates + ' duplicata(s) removida(s)');
-        setStatus('Arquivo importado: ' + numberFormat.format(result.stats.lines) + ' linhas, ' + numberFormat.format(punches.length) + ' batidas.' + (warnings.length ? ' Atenção: ' + warnings.join('; ') + '.' : ''),'success');
+        $('period').textContent=dates.length ? dateBr(dates[0])+' – '+dateBr(dates[dates.length-1]) : '—';
+        $('fileSummary').textContent=currentFile;
+        const s=result.stats;
+        let message=s.linhas_total+' linhas · '+s.tipo5_encontradas+' tipo 5 ('+s.tipo5_ignoradas+
+          ' ignoradas) · origem batidas: AFD='+s.origem_afd+' | DATA='+s.origem_data+
+          ' · '+s.batidas_unicas+' batidas únicas';
+        if (s.tipo3_sem_nome) message+=' · '+s.tipo3_sem_nome+' SEM NOME';
+        if (!punches.length) message+=' · Nenhuma batida válida encontrada'+(data ? ' no DATA selecionado. O AFD foi usado somente para nomes.':'.');
+        setStatus(message,punches.length ? 'success':'error');
+        showDiagnostics(result);
         render();
-      } catch (error) { setStatus('Não foi possível ler este arquivo. ' + (error && error.message ? error.message : ''),'error'); }
-      finally { $('fileInput').value=''; }
+      } catch(error) {
+        setStatus('Não foi possível processar: '+error.message+' A consulta anterior foi mantida.','error');
+      } finally { $('processFiles').disabled=false; }
     }
 
     function filteredPunches() {
-      const query=normalizedSearch($('search').value.trim());
-      const digits=$('search').value.replace(/\D/g,'');
+      const query=$('search').value.trim().toLowerCase();
+      const digits=query.replace(/\D/g,'');
       const start=$('startDate').value, end=$('endDate').value;
-      const matched=query ? new Set(punches.filter(record => normalizedSearch(record.name).includes(query) || (digits && record.cpf.includes(digits))).map(employeeKey)) : null;
-      return punches.filter(record => (!matched || matched.has(employeeKey(record))) && (!start || record.date>=start) && (!end || record.date<=end));
+      const matched=query ? new Set(punches.filter(record => record.name.toLowerCase().includes(query) ||
+        record.cpf.toLowerCase().includes(query) || (digits && record.cpf.includes(digits))).map(employeeKey)) : null;
+      // Como na referência, o período é aplicado quando ambas as datas são preenchidas.
+      return punches.filter(record => (!matched || matched.has(employeeKey(record))) &&
+        (!(start && end) || (record.date>=start && record.date<=end)));
     }
+
 
     function groupPunches(list) {
       const groups=new Map();
@@ -281,8 +391,8 @@
         rows:pairedRows(groups).map(row=>[dateBr(row.date),row.entry || '',row.exit || '',row.cpf,row.name])
       };
       if (view==='all') return {
-        headers:['Data','Nome','CPF','Hora','Tipo estimado','NSR'],
-        rows:list.map(record=>[dateBr(record.date),record.name,record.cpf,record.time,record.kind,record.nsr])
+        headers:['Data','Nome','CPF','Hora','Tipo estimado','Origem','NSR'],
+        rows:list.map(record=>[dateBr(record.date),record.name,record.cpf,record.time,record.kind,record.origin,record.nsr])
       };
       return {
         headers:['Data','Nome','CPF','Batidas do dia','Quantidade'],
@@ -318,6 +428,7 @@
       const list=filteredPunches();
       const groups=groupPunches(list);
       $('excelButton').disabled=list.length===0;
+      $('printButton').disabled=list.length===0;
       $('resultCount').textContent=numberFormat.format(list.length) + (list.length===1 ? ' batida encontrada' : ' batidas encontradas');
       $('resultSub').textContent=numberFormat.format(groups.size) + ' dia(s) de funcionário' + (currentFile ? ' · ' + currentFile : '');
       const empty=$('empty'), tableWrap=$('tableWrap'), head=$('tableHead'), body=$('tableBody');
@@ -326,7 +437,7 @@
       empty.hidden=list.length>0; tableWrap.hidden=list.length===0;
       if (!list.length) { empty.firstElementChild.innerHTML = punches.length ? '<strong>Nenhuma batida neste filtro</strong>Altere a busca ou o período para ver outros registros.' : '<strong>Aguardando importação</strong>Selecione o arquivo TXT do ponto digital para começar.'; return; }
       const header=document.createElement('tr');
-      const titles=activeView==='paired' ? ['Data','Entrada','Saída','CPF','Nome'] : activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
+      const titles=activeView==='paired' ? ['Data','Entrada','Saída','CPF','Nome'] : activeView==='all' ? ['Data','Funcionário / CPF','Hora','Tipo estimado','Origem','NSR'] : ['Data','Funcionário / CPF','Batidas do dia','Quantidade'];
       for (const title of titles) { const th=document.createElement('th'); th.textContent=title; header.appendChild(th); }
       head.appendChild(header);
       if (activeView==='paired') {
@@ -340,7 +451,7 @@
           const row=document.createElement('tr');
           cell(row,dateBr(record.date)); personCell(row,record); cell(row,record.time,'time');
           const kind=cell(row,record.kind); kind.className=''; const badge=document.createElement('span'); badge.className='badge'+(record.kind==='Saída'?' out':''); badge.textContent=record.kind+' (estimado)'; kind.replaceChildren(badge);
-          cell(row,record.nsr); body.appendChild(row);
+          cell(row,record.origin); cell(row,record.nsr); body.appendChild(row);
         }
       } else {
         for (const group of groups.values()) {
@@ -353,12 +464,7 @@
       }
     }
 
-    $('selectFile').addEventListener('click',()=>$('fileInput').click());
-    $('fileInput').addEventListener('change',event=>loadFile(event.target.files[0]));
-    const drop=$('dropZone');
-    drop.addEventListener('dragover',event=>{ event.preventDefault(); drop.classList.add('dragging'); });
-    drop.addEventListener('dragleave',()=>drop.classList.remove('dragging'));
-    drop.addEventListener('drop',event=>{ event.preventDefault(); drop.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
+    $('uploadForm').addEventListener('submit',event=>{ event.preventDefault(); loadFiles(); });
     for (const id of ['search','startDate','endDate']) $(id).addEventListener('input',render);
     $('clearFilters').addEventListener('click',()=>{ $('search').value=''; $('startDate').value=''; $('endDate').value=''; render(); });
     $('excelButton').addEventListener('click',exportExcel);
