@@ -73,6 +73,8 @@
 </head>
 <body class="text-gray-800 flex flex-col h-screen overflow-hidden">
 
+    <div class="print-hidden bg-blue-50 border-b border-blue-100 px-4 py-2 text-sm" role="status" aria-live="polite"><span id="vacation-save-status">Dados salvos neste navegador. Abra o Mapa de Férias dentro do RH para salvar no Firebase.</span> <button id="vacation-save-retry" type="button" class="hidden underline font-semibold ml-2" onclick="window.parent.postMessage({type:'CSVA_MAP_RETRY_SAVE'},window.location.origin)">Tentar novamente</button></div>
+
     <header class="glass-header sticky top-0 z-40 print-hidden shrink-0">
         <div class="w-full px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
@@ -699,6 +701,18 @@
             RECUSADA: 'bg-red-100 text-red-700 border-red-300'
         };
 
+        function showVacationSaveStatus(status) {
+            const messages = {
+                connecting: 'Carregando férias do Firebase. Aguarde antes de lançar.',
+                pending: 'Férias salvas neste navegador · aguardando envio ao Firebase.',
+                syncing: 'Salvando férias no Firebase...',
+                synced: 'Férias salvas no Firebase.',
+                error: 'Não foi possível confirmar o salvamento no Firebase. Os dados locais foram preservados.'
+            };
+            document.getElementById('vacation-save-status').textContent = messages[status] || messages.pending;
+            document.getElementById('vacation-save-retry').classList.toggle('hidden', status !== 'error');
+        }
+
         const app = {
             chartMonthsInstance: null,
             chartSectorsInstance: null,
@@ -708,11 +722,12 @@
             salvarDB(action = null) {
                 localStorage.setItem('mapaFeriasDB_lista_completa', JSON.stringify(DB));
                 if (APP_CONTEXT.parentConnected) {
+                    showVacationSaveStatus('pending');
                     window.parent.postMessage({
                         type: 'CSVA_VACATIONS_UPDATE',
                         vacations: DB.ferias,
                         action
-                    }, '*');
+                    }, window.location.origin);
                 }
             },
 
@@ -953,7 +968,7 @@
 
                 if (APP_CONTEXT.parentConnected) {
                     this.pendingEmployee = employee;
-                    window.parent.postMessage({ type: 'CSVA_EMPLOYEE_CREATE', employee }, '*');
+                    window.parent.postMessage({ type: 'CSVA_EMPLOYEE_CREATE', employee }, window.location.origin);
                     this.showToast('Enviando funcionário para o cadastro principal...');
                     return;
                 }
@@ -1609,10 +1624,14 @@
         };
 
         window.addEventListener('message', (event) => {
-            if (event.source !== window.parent) return;
+            if (event.source !== window.parent || event.origin !== window.location.origin) return;
             const message = event.data || {};
 
+            if (message.type === 'CSVA_MAP_SAVE_STATUS') { showVacationSaveStatus(message.status); return; }
             if (message.type === 'CSVA_MAP_INIT') {
+                showVacationSaveStatus(message.vacationStatus || 'connecting');
+                if (message.ready === false) return;
+                document.querySelector('main').inert = false;
                 const wasConnected = APP_CONTEXT.parentConnected;
                 APP_CONTEXT.parentConnected = true;
                 APP_CONTEXT.isAdmin = Boolean(message.isAdmin);
@@ -1668,8 +1687,9 @@
         });
 
         app.init();
+        if (window.parent !== window) { document.querySelector('main').inert = true; showVacationSaveStatus('connecting'); }
         if (window.parent !== window) {
-            window.parent.postMessage({ type: 'CSVA_MAP_READY' }, '*');
+            window.parent.postMessage({ type: 'CSVA_MAP_READY' }, window.location.origin);
         }
     </script>
 </body>
