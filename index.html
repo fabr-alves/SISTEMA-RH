@@ -548,6 +548,10 @@
             return saved ? JSON.parse(saved) : [];
           });
 
+          const [vacationStatus, setVacationStatus] = useState('connecting');
+          const vacationSync = React.useRef(null);
+          if (!vacationSync.current) vacationSync.current = createVacationPersistence(vacations, setVacationStatus);
+
           const [cloudStatus, setCloudStatus] = useState(db ? 'connecting' : 'offline');
           const [isInitialLoad, setIsInitialLoad] = useState(!!db);
           const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
@@ -645,7 +649,7 @@
               try {
                 setCloudStatus('syncing');
                 const docRef = db.collection('sistema_rh_dados').doc('dados_principais');
-                const docSnap = await docRef.get();
+                const docSnap = await docRef.get({ source: 'server' });
                 
                 if (docSnap.exists) {
                    const data = docSnap.data();
@@ -654,18 +658,32 @@
                    if (data.punishments) setPunishments(data.punishments);
                    if (data.reminders) setReminders(data.reminders);
                    if (data.auditLogs) setAuditLogs(data.auditLogs);
-                   if (data.vacations) setVacations(data.vacations);
+
                 }
+                const loadedVacations = vacationSync.current.load(docSnap.exists ? docSnap.data() : {});
+                setVacations(loadedVacations);
+                setRecords(previous => syncVacationRecords(previous, docSnap.exists ? docSnap.data().vacations || [] : [], loadedVacations));
+                setIsInitialLoad(false);
                 setCloudStatus('synced');
+                vacationSync.current.flush();
               } catch (err) {
                 console.error("Erro ao puxar dados da nuvem", err);
                 setCloudStatus('error');
-              } finally {
-                setIsInitialLoad(false);
+                setVacationStatus('error');
               }
             };
             fetchData();
+            const retry = () => { if (!vacationSync.current.isReady()) fetchData(); else vacationSync.current.flush(); };
+            window.addEventListener('online', retry);
+            window.addEventListener('csva-retry-vacations', retry);
+            return () => { window.removeEventListener('online', retry); window.removeEventListener('csva-retry-vacations', retry); };
           }, [user]);
+
+          useEffect(() => {
+            if (isInitialLoad || !user) return;
+            vacationSync.current.queue(vacations);
+            vacationSync.current.flush();
+          }, [vacations, isInitialLoad, user]);
 
           useEffect(() => {
             localStorage.setItem('csva_employees_v5', JSON.stringify(employees));
@@ -681,7 +699,7 @@
               setCloudStatus('syncing');
               try {
                  const docRef = db.collection('sistema_rh_dados').doc('dados_principais');
-                 await docRef.set({ employees, records, punishments, reminders, auditLogs, vacations, updatedAt: new Date().toISOString() });
+                 await docRef.set({ employees, records, punishments, reminders, auditLogs, updatedAt: new Date().toISOString() }, { merge: true });
                  setCloudStatus('synced');
               } catch (err) {
                  console.error("Erro ao salvar na nuvem", err);
@@ -820,6 +838,7 @@
                 }))
               : [];
 
+            vacationSync.current.queue(normalizedVacations);
             setRecords(previousRecords => syncVacationRecords(previousRecords, vacations, normalizedVacations));
             setVacations(normalizedVacations);
 
@@ -929,7 +948,7 @@
                   {activeTab === 'dashboard' && <DashboardView employees={employees} records={records} reminders={reminders} />}
                   {activeTab === 'lancamento' && <DailyEntryView employees={employees} records={records} onToggle={toggleRecordStatus} applyBulkRecords={applyBulkRecords} />}
                   {activeTab === 'licencas' && <LeavesView employees={employees} applyBulkRecords={applyBulkRecords} clearFutureRecords={clearFutureRecords} logAction={logAction} />}
-                  {activeTab === 'mapa-ferias' && <VacationMapView employees={employees} vacations={vacations} isAdmin={isAdmin} onVacationsChange={handleVacationMapChange} onEmployeeCreate={handleVacationEmployeeCreate} />}
+                  {activeTab === 'mapa-ferias' && <VacationMapView employees={employees} vacations={vacations} isAdmin={isAdmin} ready={!isInitialLoad} vacationStatus={vacationStatus} onVacationsChange={handleVacationMapChange} onEmployeeCreate={handleVacationEmployeeCreate} />}
                   {activeTab === 'relatorio' && <CycleReportView employees={employees} records={records} />}
                   {activeTab === 'punicao' && <PunishmentView employees={employees} punishments={punishments} setPunishments={setPunishments} logAction={logAction} />}
                   {activeTab === 'funcionarios' && <EmployeesView employees={employees} setEmployees={setEmployees} records={records} logAction={logAction} />}
@@ -979,7 +998,95 @@
           );
         }
 
-        function VacationMapView({ employees, vacations, isAdmin, onVacationsChange, onEmployeeCreate }) {
+const VACATION_PENDING_KEY = 'csva_vacations_pending_v2';
+const VACATION_MIGRATION_KEY = 'csva_vacations_firebase_v2';
+const vacationClone = value => JSON.parse(JSON.stringify(value));
+function vacationPatch(before, after) {
+  const old = new Map(before.map(item => [String(item.id), item]));
+  const next = new Map(after.map(item => [String(item.id), item]));
+  return {
+    upsert: [...next].filter(([id, item]) => !old.has(id) || JSON.stringify(old.get(id)) !== JSON.stringify(item)).map(([, item]) => item),
+    remove: [...old.keys()].filter(id => !next.has(id))
+  };
+}
+function applyVacationPatch(data, patch) {
+  const values = new Map(data.map(item => [String(item.id), item]));
+  for (const id of patch.remove || []) values.delete(String(id));
+  for (const item of patch.upsert || []) values.set(String(item.id), item);
+  return vacationClone([...values.values()]);
+}
+function combineVacationPatches(first, second) {
+  const upsert = new Map((first.upsert || []).map(item => [String(item.id), item]));
+  const remove = new Set(first.remove || []);
+  for (const id of second.remove || []) { upsert.delete(id); remove.add(id); }
+  for (const item of second.upsert || []) { const id = String(item.id); remove.delete(id); upsert.set(id, item); }
+  return { upsert: [...upsert.values()], remove: [...remove] };
+}
+function createVacationPersistence(initial, onStatus) {
+  let baseline = vacationClone(initial), pending = { upsert: [], remove: [] }, revision = 0, writing = false, ready = false;
+  try { pending = JSON.parse(localStorage.getItem(VACATION_PENDING_KEY)) || pending; } catch {}
+  const hasPending = () => !!(pending.upsert?.length || pending.remove?.length);
+  const persist = () => localStorage.setItem(VACATION_PENDING_KEY, JSON.stringify(pending));
+  const queue = next => {
+    const patch = vacationPatch(baseline, next);
+    baseline = vacationClone(next);
+    if (!patch.upsert.length && !patch.remove.length) return;
+    pending = combineVacationPatches(pending, patch);
+    revision++;
+    persist();
+    localStorage.setItem('csva_vacations_v1', JSON.stringify(next));
+    onStatus('pending');
+  };
+  const load = source => {
+    const remote = Array.isArray(source.vacations) ? source.vacations : [];
+    const deleted = new Set(source.deletedVacationIds || []);
+    if (localStorage.getItem(VACATION_MIGRATION_KEY) !== '1') {
+      let legacy = [];
+      try {
+        const saved = JSON.parse(localStorage.getItem('mapaFeriasDB_lista_completa'));
+        const ids = new Map((saved?.funcionarios || []).map(employee => [String(employee.id), String(employee.mat || employee.id)]));
+        legacy = (saved?.ferias || []).map(item => ({ ...item, funcId: ids.get(String(item.funcId)) || String(item.funcId), status: item.status || 'APROVADA' }));
+      } catch {}
+      const merged = new Map(remote.map(item => [String(item.id), item]));
+      for (const item of [...baseline, ...legacy]) if (!merged.has(String(item.id)) && !deleted.has(String(item.id))) merged.set(String(item.id), item);
+      pending = combineVacationPatches(vacationPatch(remote, [...merged.values()]), pending);
+      revision++;persist();
+    }
+    baseline = applyVacationPatch(remote, pending).filter(item => !deleted.has(String(item.id)));
+    ready = true;
+    if (!hasPending()) localStorage.setItem(VACATION_MIGRATION_KEY, '1');
+    onStatus(hasPending() ? 'pending' : 'synced');
+    return vacationClone(baseline);
+  };
+  const flush = async () => {
+    if (!ready || writing || !hasPending() || !db || !auth?.currentUser) return;
+    writing = true;
+    const sent = vacationClone(pending), sentRevision = revision;
+    onStatus('syncing');
+    try {
+      const ref = db.collection('sistema_rh_dados').doc('dados_principais');
+      await db.runTransaction(async transaction => {
+        const snapshot = await transaction.get(ref), source = snapshot.exists ? snapshot.data() : {};
+        const previous = source.vacations || [], deleted = new Set(source.deletedVacationIds || []);
+        for (const id of sent.remove || []) deleted.add(String(id));
+        const next = applyVacationPatch(previous, sent).filter(item => !deleted.has(String(item.id)));
+        transaction.set(ref, { vacations: next, records: syncVacationRecords(source.records || {}, previous, next), deletedVacationIds: [...deleted], updatedAt: new Date().toISOString() }, { merge: true });
+      });
+      if (sentRevision === revision) { pending = { upsert: [], remove: [] }; persist(); }
+      localStorage.setItem(VACATION_MIGRATION_KEY, '1');
+      onStatus(hasPending() ? 'pending' : 'synced');
+    } catch (error) {
+      console.error('Erro ao salvar Mapa de Férias no Firebase:', error);
+      onStatus('error');
+    } finally {
+      writing = false;
+      if (sentRevision !== revision && hasPending()) flush();
+    }
+  };
+  return { queue, load, flush, isReady: () => ready };
+}
+
+        function VacationMapView({ employees, vacations, isAdmin, ready, vacationStatus, onVacationsChange, onEmployeeCreate }) {
           const iframeRef = React.useRef(null);
 
           const sendCurrentData = () => {
@@ -998,37 +1105,45 @@
 
             iframeRef.current.contentWindow.postMessage({
               type: 'CSVA_MAP_INIT',
+              ready,
+              vacationStatus,
               employees: mappedEmployees,
               vacations,
               isAdmin
-            }, '*');
+            }, window.location.origin);
           };
 
           useEffect(() => {
             sendCurrentData();
-          }, [employees, vacations, isAdmin]);
+          }, [employees, vacations, isAdmin, ready]);
 
           useEffect(() => {
             const handleMapMessage = (event) => {
-              if (event.source !== iframeRef.current?.contentWindow) return;
+              if (event.source !== iframeRef.current?.contentWindow || event.origin !== window.location.origin) return;
               const message = event.data || {};
 
               if (message.type === 'CSVA_MAP_READY') {
                 sendCurrentData();
-              } else if (message.type === 'CSVA_VACATIONS_UPDATE') {
+              } else if (message.type === 'CSVA_MAP_RETRY_SAVE') {
+                window.dispatchEvent(new Event('csva-retry-vacations'));
+              } else if (message.type === 'CSVA_VACATIONS_UPDATE' && ready) {
                 onVacationsChange(message.vacations, message.action);
               } else if (message.type === 'CSVA_EMPLOYEE_CREATE') {
                 const result = onEmployeeCreate(message.employee);
                 iframeRef.current?.contentWindow?.postMessage({
                   type: 'CSVA_EMPLOYEE_CREATE_RESULT',
                   ...result
-                }, '*');
+                }, window.location.origin);
               }
             };
 
             window.addEventListener('message', handleMapMessage);
             return () => window.removeEventListener('message', handleMapMessage);
-          }, [employees, vacations, isAdmin, onVacationsChange, onEmployeeCreate]);
+          }, [employees, vacations, isAdmin, ready, vacationStatus, onVacationsChange, onEmployeeCreate]);
+
+          useEffect(() => {
+            iframeRef.current?.contentWindow?.postMessage({ type: 'CSVA_MAP_SAVE_STATUS', status: vacationStatus }, window.location.origin);
+          }, [vacationStatus]);
 
           return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
