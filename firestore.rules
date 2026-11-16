@@ -57,6 +57,48 @@ service cloud.firestore {
       allow read, write: if isAdmin() || hasApprovedAccess();
     }
 
+    // escala_cobertura/{id}: solicitação imutável, com decisão única e identidade autenticada.
+    function canUseRh() { return isAdmin() || hasApprovedAccess(); }
+
+    function isCoverageApprover() {
+      return canUseRh() && request.auth.token.email in [
+        'marcelino@csva.com.br', 'souza.a.alves@csva.com.br', 'fabricio@csva.com.br'
+      ];
+    }
+
+    function coverageText(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max && value.matches('(?s).*[^\\s].*');
+    }
+
+    function coverageDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function validCoverage(d) {
+      return d.keys().hasAll(['recordId','employeeId','employeeName','shift','workDate','offDate','reason','requestedBy','requestedAt','status'])
+        && d.keys().hasOnly(['recordId','employeeId','employeeName','shift','workDate','offDate','reason','requestedBy','requestedAt','status','decidedBy','decidedEmail','decidedAt','decisionReason'])
+        && coverageText(d.recordId, 128) && coverageText(d.employeeId, 128) && coverageText(d.employeeName, 160)
+        && coverageText(d.shift, 120) && coverageDate(d.workDate) && coverageDate(d.offDate) && d.workDate != d.offDate
+        && coverageText(d.reason, 500) && coverageText(d.requestedBy, 128) && d.requestedAt is timestamp
+        && (d.status == 'pending' || d.status == 'approved' || d.status == 'denied');
+    }
+
+    match /escala_cobertura/{id} {
+      allow read: if canUseRh();
+      allow create: if canUseRh() && validCoverage(request.resource.data)
+        && request.resource.data.status == 'pending' && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.requestedAt == request.time
+        && !request.resource.data.keys().hasAny(['decidedBy','decidedEmail','decidedAt','decisionReason']);
+      allow update: if isCoverageApprover() && validCoverage(request.resource.data)
+        && resource.data.status == 'pending' && request.resource.data.status in ['approved','denied']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','decidedBy','decidedEmail','decidedAt','decisionReason'])
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedEmail == request.auth.token.email
+        && request.resource.data.decidedAt == request.time
+        && coverageText(request.resource.data.decisionReason, 500);
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
