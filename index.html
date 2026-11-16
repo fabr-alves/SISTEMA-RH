@@ -945,7 +945,7 @@
 
               <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50">
                 <div className="p-4 sm:p-6 lg:p-8 w-full max-w-full mx-auto">
-                  {activeTab === 'dashboard' && <DashboardView employees={employees} records={records} reminders={reminders} />}
+                  {activeTab === 'dashboard' && <><CoverageDashboard key={user.uid} user={user} onOpenScale={() => setActiveTab('controle-escala')} /><DashboardView employees={employees} records={records} reminders={reminders} /></>}
                   {activeTab === 'lancamento' && <DailyEntryView employees={employees} records={records} onToggle={toggleRecordStatus} applyBulkRecords={applyBulkRecords} />}
                   {activeTab === 'licencas' && <LeavesView employees={employees} applyBulkRecords={applyBulkRecords} clearFutureRecords={clearFutureRecords} logAction={logAction} />}
                   {activeTab === 'mapa-ferias' && <VacationMapView employees={employees} vacations={vacations} isAdmin={isAdmin} ready={!isInitialLoad} vacationStatus={vacationStatus} onVacationsChange={handleVacationMapChange} onEmployeeCreate={handleVacationEmployeeCreate} />}
@@ -965,6 +965,60 @@
         }
 
         // --- SUB-COMPONENTES ---
+        const COVERAGE_APPROVERS = ['marcelino@csva.com.br', 'souza.a.alves@csva.com.br', 'fabricio@csva.com.br'];
+
+        function CoverageDashboard({ user, onOpenScale }) {
+          const [requests, setRequests] = useState([]);
+          const [selected, setSelected] = useState(null);
+          const [reason, setReason] = useState('');
+          const [status, setStatus] = useState('loading');
+          const [busy, setBusy] = useState(false);
+          const [feedback, setFeedback] = useState('');
+          const allowed = COVERAGE_APPROVERS.includes(user?.email);
+          useEffect(() => {
+            if (!allowed || !db) return;
+            return db.collection('escala_cobertura').where('status', '==', 'pending').onSnapshot({includeMetadataChanges:true}, snapshot => {
+              setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+              setStatus(snapshot.metadata.fromCache ? 'offline' : 'ready');
+            }, () => setStatus('error'));
+          }, [allowed, user?.uid]);
+          if (!allowed) return null;
+          const date = value => value.split('-').reverse().join('/');
+          const decide = async event => {
+            event.preventDefault();
+            const note = reason.trim();
+            if (!selected || !note || busy) return;
+            setBusy(true);setFeedback('');
+            try {
+              const ref = db.collection('escala_cobertura').doc(selected.id);
+              await db.runTransaction(async tx => {
+                const snapshot = await tx.get(ref);
+                if (!snapshot.exists || snapshot.data().status !== 'pending') throw Error('Este pedido já foi decidido.');
+                const request = snapshot.data();
+                const scale = await tx.get(db.collection('sistema_rh_dados').doc('controle_escala'));
+                const record = (scale.data()?.records || []).find(item => item.id === request.recordId);
+                if (selected.decision === 'approved' && (!record || record.state !== 'pending' || record.choice !== 'leave' || record.coverageRequestId !== selected.id || record.employee !== request.employeeId || record.shift !== request.shift || record.date !== request.workDate || record.off !== request.offDate)) throw Error('A convocação mudou. Recuse este pedido e solicite uma nova análise.');
+                if (selected.decision === 'approved' && (scale.data()?.records || []).some(item => item.id !== record.id && item.employee === record.employee && item.date === record.off && item.state !== 'cancelled')) throw Error('O funcionário está convocado na data da folga. Recuse este pedido ou ajuste a convocação conflitante.');
+                tx.update(ref, { status: selected.decision, decidedBy: user.uid, decidedEmail: user.email, decidedAt: firebase.firestore.FieldValue.serverTimestamp(), decisionReason: note });
+              });
+              setFeedback(selected.decision === 'approved' ? 'Exceção aprovada.' : 'Exceção recusada.');setSelected(null);setReason('');
+            } catch (error) {
+              setFeedback(error.code ? 'Não foi possível registrar a decisão. Confira a conexão e a permissão da conta.' : error.message);
+            } finally { setBusy(false); }
+          };
+          return <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold text-gray-900">Exceções de escala</h2><button type="button" className="font-semibold text-blue-800 underline" onClick={onOpenScale}>Abrir Controle de Escala</button></div>
+            <p role="status" className="mt-2">{status === 'loading' ? 'Consultando pedidos…' : status === 'error' ? 'Não foi possível consultar os pedidos no Firebase.' : status === 'offline' ? 'Sem confirmação do Firebase. Reconecte para decidir.' : requests.length ? `${requests.length} pedido(s) de exceção aguardando sua análise.` : 'Nenhuma exceção pendente.'}</p>
+            {requests.map(item => <article key={item.id} className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+              <p><strong>{item.employeeName}</strong> · Turno {item.shift} · Folga em {date(item.offDate)} · Trabalho em {date(item.workDate)}</p>
+              <p className="mt-1 whitespace-pre-wrap text-gray-700">Motivo: {item.reason}</p>
+              <div className="mt-2 flex gap-3"><button type="button" disabled={busy || status !== 'ready'} className="font-bold text-emerald-700" onClick={() => {setSelected({...item, decision:'approved'});setReason('');setFeedback('');}}>Aprovar</button><button type="button" disabled={busy || status !== 'ready'} className="font-bold text-red-700" onClick={() => {setSelected({...item, decision:'denied'});setReason('');setFeedback('');}}>Recusar</button></div>
+            </article>)}
+            {selected && <form onSubmit={decide} className="mt-3 rounded-lg bg-white p-3"><label className="block font-semibold">{selected.decision === 'approved' ? 'Motivo da aprovação' : 'Motivo da recusa'} · {selected.employeeName}<textarea required maxLength={500} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded border p-2" /></label><div className="mt-2 flex gap-3"><button disabled={busy || !reason.trim() || status !== 'ready'} className="rounded bg-blue-700 px-3 py-2 text-white">Confirmar decisão</button><button type="button" disabled={busy} onClick={() => setSelected(null)}>Voltar</button></div></form>}
+            {feedback && <p role="status" className="mt-3 font-semibold">{feedback}</p>}
+          </section>;
+        }
+
         function ScheduleControlView() {
           return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-[calc(100vh-4rem)] min-h-[620px] animate-fade-in">
