@@ -1,65 +1,12 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function canUseRh() {
+      return signedIn() && (request.auth.token.email == 'fabricio@csva.com.br' ||
+        (exists(/databases/$(database)/documents/access_requests/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/access_requests/$(request.auth.uid)).data.status == 'approved'));
     }
-
-    function isAdmin() {
-      return isSignedIn()
-        && request.auth.token.email == 'fabricio@csva.com.br';
-    }
-
-    function isCorporateUser() {
-      return isSignedIn()
-        && request.auth.token.email is string
-        && request.auth.token.email.matches('^[a-zA-Z0-9._-]+@csva[.]com[.]br$');
-    }
-
-    function ownsAccessRequest(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isValidPendingRequest(userId) {
-      return ownsAccessRequest(userId)
-        && isCorporateUser()
-        && request.resource.data.keys().hasOnly([
-          'uid',
-          'email',
-          'status',
-          'requestedAt',
-          'requestedAtIso'
-        ])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.status == 'pending';
-    }
-
-    function hasApprovedAccess() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/access_requests/$(request.auth.uid))
-        && get(/databases/$(database)/documents/access_requests/$(request.auth.uid)).data.status == 'approved';
-    }
-
-    match /access_requests/{userId} {
-      allow create: if isValidPendingRequest(userId);
-      allow read: if isAdmin() || ownsAccessRequest(userId);
-      allow update: if isAdmin()
-        || (
-          isValidPendingRequest(userId)
-          && resource.data.status != 'approved'
-        );
-      allow delete: if isAdmin();
-    }
-
-    match /sistema_rh_dados/{documentId} {
-      allow read, write: if isAdmin() || hasApprovedAccess();
-    }
-
-    // escala_cobertura/{id}: solicitação imutável, com decisão única e identidade autenticada.
-    function canUseRh() { return isAdmin() || hasApprovedAccess(); }
-
     function isCoverageApprover() {
       return canUseRh() && request.auth.token.email in [
         'marcelino@csva.com.br', 'souza.a.alves@csva.com.br', 'fabricio@csva.com.br'
@@ -80,7 +27,7 @@ service cloud.firestore {
         && coverageText(d.recordId, 128) && coverageText(d.employeeId, 128) && coverageText(d.employeeName, 160)
         && coverageText(d.shift, 120) && coverageDate(d.workDate) && coverageDate(d.offDate) && d.workDate != d.offDate
         && coverageText(d.reason, 500) && coverageText(d.requestedBy, 128) && d.requestedAt is timestamp
-        && (d.status == 'pending' || d.status == 'approved' || d.status == 'denied');
+        && d.status in ['pending','approved','denied'];
     }
 
     match /escala_cobertura/{id} {
@@ -99,8 +46,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /{document=**} {
-      allow read, write: if false;
+
+    // Preserva a regra de produção nas outras coleções.
+    match /{collection}/{document=**} {
+      allow read, write: if collection != 'escala_cobertura' && signedIn();
     }
   }
 }
